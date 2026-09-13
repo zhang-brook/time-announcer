@@ -1,0 +1,8 @@
+# 核心依赖（Windows 平台）
+pywin32>=306      # SAPI 语音合成（TTS）
+pycaw>=20240210   # 系统主音量 / 静音状态读写
+comtypes>=1.2.1   # pycaw 依赖的 COM 封装
+
+# 可选依赖：系统托盘图标（缺失时自动降级为仅窗口模式）
+pystray>=0.19
+Pillow>=10.0
