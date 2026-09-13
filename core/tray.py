@@ -6,20 +6,8 @@ import threading
 from typing import Callable, Optional
 
 import pystray
-from PIL import Image, ImageDraw
 
-
-def _make_icon(size: int = 64) -> Image.Image:
-    """绘制一个蓝色时钟图标，避免依赖外部图片文件。"""
-    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    pad = size // 16
-    draw.ellipse((pad, pad, size - pad, size - pad), fill=(0, 120, 212, 255),
-                 outline=(255, 255, 255, 255), width=max(2, size // 21))
-    center = size // 2
-    draw.line((center, center, center, size // 5), fill=(255, 255, 255, 255), width=max(3, size // 16))
-    draw.line((center, center, size * 3 // 4, center), fill=(255, 255, 255, 255), width=max(3, size // 16))
-    return image
+from .icon import draw
 
 
 class TrayIcon:
@@ -30,7 +18,7 @@ class TrayIcon:
         self._on_quit = on_quit
         self._icon: Optional[pystray.Icon] = pystray.Icon(
             "TimeAnnouncer",
-            _make_icon(),
+            draw(64),
             title,
             menu=pystray.Menu(
                 pystray.MenuItem("打开主窗口", self._open, default=True),

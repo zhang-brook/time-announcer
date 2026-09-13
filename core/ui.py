@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 from . import autostart, config, timeutil, volume
 from . import APP_NAME, APP_REPO_URL, APP_TITLE, APP_VERSION
 from .config import MODE_CUSTOM, MODE_HOURLY, MODE_HOURLY_HALF
+from .icon import icon_path
 from .scheduler import parse_hhmm, time_text
 
 try:  # 托盘为可选能力，缺失时自动降级
@@ -47,6 +48,7 @@ class App(tk.Tk):
         self.title(f"{config.APP_NAME} · 整点北京时间播报")
         self.geometry("760x800")
         self.minsize(680, 800)
+        self._apply_icon()
 
         self._init_vars()
         self._build_header()
@@ -67,6 +69,16 @@ class App(tk.Tk):
                 self.withdraw()
             else:
                 self.deiconify()
+
+    def _apply_icon(self) -> None:
+        """标题栏/任务栏图标与托盘、exe 共用同一份 assets/app.ico。"""
+        path = icon_path()
+        if not path:
+            return
+        try:
+            self.iconbitmap(path)
+        except tk.TclError:
+            pass
 
     # ---------------- 变量与配置同步 ----------------
 

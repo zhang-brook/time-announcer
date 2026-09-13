@@ -54,6 +54,8 @@ python main.py --minimized    # 启动后最小化到系统托盘
 ```
 time-announcer/
 ├── main.py                 程序入口（单实例保护、参数解析）
+├── assets/
+│   └── app.ico             应用图标（托盘 / 窗口 / exe 共用）
 ├── core/
 │   ├── config.py           配置读写（JSON，默认值补全）
 │   ├── timeutil.py         北京时间与中文数字、NTP 校时
@@ -62,9 +64,20 @@ time-announcer/
 │   ├── announcer.py        播报流程（临时调高音量 → 播报 → 还原）
 │   ├── scheduler.py        定时调度（四种计划）
 │   ├── autostart.py        开机自启（注册表）
+│   ├── icon.py             图标绘制与 assets/app.ico 生成
 │   ├── ui.py               tkinter 图形界面
 │   └── tray.py             系统托盘图标（可选）
+├── TimeAnnouncer.spec      PyInstaller 打包脚本
 └── requirements.txt
+```
+
+## 应用图标
+
+托盘图标、窗口标题栏/任务栏图标与打包出的 exe 图标共用同一份图形 `assets/app.ico`。
+图标由 [core/icon.py](core/icon.py) 的 `draw()` 绘制，修改后重新生成即可，三处同时生效：
+
+```powershell
+python -m core.icon
 ```
 
 ## 常见问题
@@ -78,8 +91,11 @@ time-announcer/
 
 ```powershell
 pip install pyinstaller
-# pyinstaller --noconfirm --onefile --windowed --name TimeAnnouncer main.py
-python -m PyInstaller --noconfirm --onefile --windowed --name TimeAnnouncer main.py
+python -m PyInstaller --noconfirm --clean TimeAnnouncer.spec
+
+# 不使用 spec 时的等价命令
+# python -m PyInstaller --noconfirm --onefile --windowed --name TimeAnnouncer `
+#     --icon assets/app.ico --add-data "assets/app.ico;assets" main.py
 ```
 
 产物在 `dist\TimeAnnouncer.exe`，可自行放到固定目录并重新勾选开机自启。
