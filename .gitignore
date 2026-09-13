@@ -8,5 +8,3 @@ venv/
 config.json
 *.log
 .DS_Store
-
-TimeAnnouncer.spec
