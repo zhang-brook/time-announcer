@@ -241,13 +241,16 @@ class App(tk.Tk):
         ):
             ttk.Radiobutton(mode_box, text=text, value=value, variable=self.v_mode).pack(anchor="w", pady=2)
 
+        # 时段设置板块：与下方的「自定义时刻」并列，仅整点/半点模式生效
+        self.range_frame = ttk.LabelFrame(frame, text="时段设置（整点/半点模式生效）", padding=10)
+        self.range_frame.pack(fill="x", pady=(10, 0))
         self.all_day_check = ttk.Checkbutton(
-            mode_box, text="全天生效（不限制时段，0-23 点整点/半点均播报）",
+            self.range_frame, text="全天生效（不限制时段，0-23 点整点/半点均播报）",
             variable=self.v_hour_all_day,
         )
-        self.all_day_check.pack(anchor="w", pady=(8, 0))
+        self.all_day_check.pack(anchor="w")
 
-        range_box = ttk.Frame(mode_box)
+        range_box = ttk.Frame(self.range_frame)
         range_box.pack(anchor="w", pady=(4, 0))
         ttk.Label(range_box, text="生效时段：").pack(side="left")
         ttk.Spinbox(range_box, from_=0, to=23, width=4, textvariable=self.v_hour_start,
@@ -417,9 +420,15 @@ class App(tk.Tk):
             text="自定义时刻（每行一个，格式 HH:MM）"
             + ("" if is_custom else "  · 未启用")
         )
-        self.all_day_check.configure(state="disabled" if is_custom else "normal")
+        # 时段设置板块：仅整点/半点模式可用，自定义模式时整体禁用
+        state_mode_range = "disabled" if is_custom else "normal"
+        self.all_day_check.configure(state=state_mode_range)
         for child in self.range_hint.winfo_children():
             child.configure(state=state_range)
+        self.range_frame.configure(
+            text="时段设置（整点/半点模式生效）"
+            + ("  · 未启用" if is_custom else "")
+        )
 
     def refresh_voices(self) -> None:
         from .speaker import list_voices, pick_voice_name
