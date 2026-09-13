@@ -300,7 +300,7 @@ class App(tk.Tk):
         ttk.Label(
             frame,
             text="说明：程序启动后即进入第一个专注周期，专注结束播报休息提示，休息结束播报下一轮专注提示。",
-            foreground="#666", wraplength=520, justify="left",
+            foreground="#666", wraplength=550, justify="left",
         ).pack(anchor="w", pady=(12, 0))
         return frame
 
