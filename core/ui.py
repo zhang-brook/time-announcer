@@ -485,7 +485,11 @@ class App(tk.Tk):
         if TrayIcon is None:
             return False
         try:
-            self._tray = TrayIcon(on_open=self.show_window, on_quit=self.quit_app)
+            # 托盘回调运行在托盘线程，统一转发到 tkinter 主线程执行
+            self._tray = TrayIcon(
+                on_open=self.show_window,
+                on_quit=lambda: self.after(0, self.quit_app),
+            )
             self._tray.start()
             return True
         except Exception as exc:  # noqa: BLE001
