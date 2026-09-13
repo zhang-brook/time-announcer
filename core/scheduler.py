@@ -45,7 +45,7 @@ def _in_hour_range(hour: int, start: int, end: int) -> bool:
     return hour >= start or hour <= end
 
 
-def _time_text(cfg: Dict[str, Any], dt: datetime) -> str:
+def time_text(cfg: Dict[str, Any], dt: datetime) -> str:
     """按配置模板渲染报时文本。"""
     text_cfg = cfg.get("text", {})
     hour_cn, minute_cn = timeutil.cn_hour_minute(dt)
@@ -139,7 +139,7 @@ class Scheduler:
                 key = f"time|{moment:%Y-%m-%d %H:%M}"
                 if key in self._fired:
                     continue
-                return Event(key=key, kind=KIND_TIME, text=_time_text(cfg, moment), at=moment)
+                return Event(key=key, kind=KIND_TIME, text=time_text(cfg, moment), at=moment)
         return None
 
     def _candidate_moments(self, now: datetime, cfg: Dict[str, Any], day_offsets=(-1, 0)) -> List[datetime]:

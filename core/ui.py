@@ -1,0 +1,527 @@
+"""图形界面（tkinter）。所有改动即时写入配置文件并重新加载调度。"""
+
+from __future__ import annotations
+
+import os
+import queue
+import subprocess
+import threading
+import tkinter as tk
+from tkinter import messagebox, ttk
+from typing import Any, Dict, List, Optional
+
+from . import autostart, config, timeutil, volume
+from .config import MODE_CUSTOM, MODE_HOURLY, MODE_HOURLY_HALF
+from .scheduler import parse_hhmm, time_text
+
+try:  # 托盘为可选能力，缺失时自动降级
+    from .tray import TrayIcon
+except Exception:  # noqa: BLE001
+    TrayIcon = None  # type: ignore
+
+WEEKDAY_CN = ["一", "二", "三", "四", "五", "六", "日"]
+FONT_NORMAL = ("Microsoft YaHei UI", 10)
+FONT_BOLD = ("Microsoft YaHei UI", 10, "bold")
+FONT_CLOCK = ("Microsoft YaHei UI", 30, "bold")
+
+
+class App(tk.Tk):
+    def __init__(self, cfg: Dict[str, Any], announcer, scheduler, start_minimized: bool = False):
+        super().__init__()
+        self.cfg = cfg
+        self.announcer = announcer
+        self.scheduler = scheduler
+        self._loading = True
+        self._log_queue: "queue.Queue[str]" = queue.Queue()
+        self._tray = None
+
+        self.title(f"{config.APP_NAME} · 整点北京时间播报")
+        self.geometry("760x640")
+        self.minsize(720, 600)
+
+        self._init_vars()
+        self._build_header()
+        self._build_tabs()
+        self._build_footer()
+
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self._loading = False
+
+        self.scheduler.on_event = self.handle_event
+        self.scheduler.start()
+
+        self._tick_clock()
+        self._drain_log()
+        if start_minimized:
+            # 托盘不可用时降级为正常显示，避免程序隐藏后无法找回
+            if self._ensure_tray():
+                self.withdraw()
+            else:
+                self.deiconify()
+
+    # ---------------- 变量与配置同步 ----------------
+
+    def _init_vars(self) -> None:
+        cfg = self.cfg
+        self.v_enabled = tk.BooleanVar(value=cfg.get("enabled", True))
+        self.v_mode = tk.StringVar(value=cfg.get("mode", MODE_HOURLY))
+        self.v_hour_start = tk.IntVar(value=cfg.get("hour_start", 8))
+        self.v_hour_end = tk.IntVar(value=cfg.get("hour_end", 22))
+
+        pomo = cfg.get("pomodoro", {})
+        self.v_pomo_enabled = tk.BooleanVar(value=pomo.get("enabled", False))
+        self.v_work = tk.IntVar(value=pomo.get("work_minutes", 25))
+        self.v_break = tk.IntVar(value=pomo.get("break_minutes", 5))
+        self.v_rounds = tk.IntVar(value=pomo.get("rounds", 4))
+
+        voice = cfg.get("voice", {})
+        self.v_voice = tk.StringVar(value=voice.get("name", ""))
+        self.v_rate = tk.IntVar(value=voice.get("rate", 0))
+        self.v_volume = tk.IntVar(value=voice.get("volume", 100))
+
+        audio = cfg.get("audio", {})
+        self.v_boost = tk.BooleanVar(value=audio.get("boost_enabled", True))
+        self.v_boost_volume = tk.IntVar(value=audio.get("boost_volume", 60))
+        self.v_restore = tk.BooleanVar(value=audio.get("restore_after", True))
+
+        text = cfg.get("text", {})
+        self.v_on_hour = tk.StringVar(value=text.get("on_hour", ""))
+        self.v_on_minute = tk.StringVar(value=text.get("on_minute", ""))
+        self.v_pomo_work = tk.StringVar(value=text.get("pomodoro_work", ""))
+        self.v_pomo_break = tk.StringVar(value=text.get("pomodoro_break", ""))
+        self.v_suffix = tk.StringVar(value=text.get("suffix", ""))
+        self.v_test_text = tk.StringVar(value="北京时间播报测试")
+
+        self.v_autostart = tk.BooleanVar(value=autostart.is_enabled())
+        self.v_start_min = tk.BooleanVar(value=cfg.get("start_minimized", False))
+        self.v_tray = tk.BooleanVar(value=cfg.get("minimize_to_tray", True))
+
+        for var in self._all_vars():
+            var.trace_add("write", self.on_change)
+
+    def _all_vars(self) -> List[tk.Variable]:
+        return [
+            self.v_enabled, self.v_mode, self.v_hour_start, self.v_hour_end,
+            self.v_pomo_enabled, self.v_work, self.v_break, self.v_rounds,
+            self.v_voice, self.v_rate, self.v_volume,
+            self.v_boost, self.v_boost_volume, self.v_restore,
+            self.v_on_hour, self.v_on_minute, self.v_pomo_work, self.v_pomo_break, self.v_suffix,
+            self.v_start_min, self.v_tray,
+        ]
+
+    def on_change(self, *_args) -> None:
+        if self._loading:
+            return
+        self.apply()
+
+    def apply(self) -> None:
+        """把界面上的设置写回配置、落盘并重新加载调度。"""
+        self.collect()
+        config.save(self.cfg)
+        self.scheduler.reload()
+        self.refresh_controls()
+
+    def collect(self) -> None:
+        cfg = self.cfg
+        cfg["enabled"] = bool(self.v_enabled.get())
+        cfg["mode"] = self.v_mode.get()
+        cfg["hour_start"] = self._clamp(self.v_hour_start, 0, 23)
+        cfg["hour_end"] = self._clamp(self.v_hour_end, 0, 23)
+
+        times: List[str] = []
+        for line in self.custom_box.get("1.0", "end").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parsed = parse_hhmm(line)
+            times.append(f"{parsed[0]:02d}:{parsed[1]:02d}" if parsed else line)
+        cfg["custom_times"] = times
+
+        cfg["pomodoro"] = {
+            "enabled": bool(self.v_pomo_enabled.get()),
+            "work_minutes": self._clamp(self.v_work, 1, 600),
+            "break_minutes": self._clamp(self.v_break, 1, 120),
+            "rounds": self._clamp(self.v_rounds, 0, 99),
+        }
+        cfg["voice"] = {
+            "name": self.v_voice.get(),
+            "rate": self._clamp(self.v_rate, -10, 10),
+            "volume": self._clamp(self.v_volume, 0, 100),
+        }
+        cfg["audio"] = {
+            "boost_enabled": bool(self.v_boost.get()),
+            "boost_volume": self._clamp(self.v_boost_volume, 1, 100),
+            "restore_after": bool(self.v_restore.get()),
+        }
+        cfg["text"] = {
+            "on_hour": self.v_on_hour.get(),
+            "on_minute": self.v_on_minute.get(),
+            "pomodoro_work": self.v_pomo_work.get(),
+            "pomodoro_break": self.v_pomo_break.get(),
+            "suffix": self.v_suffix.get(),
+        }
+        cfg["start_minimized"] = bool(self.v_start_min.get())
+        cfg["minimize_to_tray"] = bool(self.v_tray.get())
+
+    @staticmethod
+    def _clamp(var: tk.Variable, low: int, high: int) -> int:
+        try:
+            value = int(var.get())
+        except (TypeError, ValueError):
+            return low
+        return max(low, min(high, value))
+
+    # ---------------- 界面构建 ----------------
+
+    def _build_header(self) -> None:
+        header = ttk.Frame(self, padding=(16, 12, 16, 6))
+        header.pack(fill="x")
+
+        self.clock_label = ttk.Label(header, text="--:--:--", font=FONT_CLOCK)
+        self.clock_label.grid(row=0, column=0, rowspan=2, sticky="w")
+
+        info = ttk.Frame(header)
+        info.grid(row=0, column=1, rowspan=2, sticky="w", padx=(24, 0))
+        self.date_label = ttk.Label(info, text="", font=FONT_NORMAL)
+        self.date_label.pack(anchor="w")
+        self.next_label = ttk.Label(info, text="", font=FONT_NORMAL)
+        self.next_label.pack(anchor="w", pady=(4, 0))
+        self.state_label = ttk.Label(info, text="", font=FONT_NORMAL, foreground="#0078d4")
+        self.state_label.pack(anchor="w")
+
+        actions = ttk.Frame(header)
+        actions.grid(row=0, column=2, sticky="e")
+        header.columnconfigure(2, weight=1)
+        ttk.Button(actions, text="立即播报", command=self.speak_now).pack(side="left")
+        ttk.Button(actions, text="试听", command=self.speak_test).pack(side="left", padx=6)
+        ttk.Button(actions, text="停止", command=self.stop_speaking).pack(side="left")
+        ttk.Entry(actions, textvariable=self.v_test_text, width=18).pack(side="left", padx=(12, 0))
+        ttk.Label(actions, text="← 试听文本", foreground="#666").pack(side="left")
+
+        self.offset_label = ttk.Label(header, text="", font=("Microsoft YaHei UI", 8), foreground="#888")
+        self.offset_label.grid(row=1, column=2, sticky="e", pady=(6, 0))
+
+    def _build_tabs(self) -> None:
+        notebook = ttk.Notebook(self, padding=(12, 4))
+        notebook.pack(fill="both", expand=True)
+
+        self.tabs = []
+        for builder, title in (
+            (self._tab_time, "报时设置"),
+            (self._tab_pomodoro, "番茄钟"),
+            (self._tab_voice, "语音与音量"),
+            (self._tab_text, "播报文案"),
+        ):
+            tab = builder(notebook)  # 页面必须是 Notebook 的子控件
+            self.tabs.append(tab)
+            notebook.add(tab, text=title)
+
+    def _tab_time(self, notebook) -> ttk.Frame:
+        frame = ttk.Frame(notebook, padding=12)
+        ttk.Checkbutton(
+            frame, text="启用定时播报（关闭后不再报时）",
+            variable=self.v_enabled,
+        ).pack(anchor="w")
+
+        mode_box = ttk.LabelFrame(frame, text="报时模式", padding=10)
+        mode_box.pack(fill="x", pady=(10, 0))
+
+        for text, value in (
+            ("整点报时（如 8:00、9:00）", MODE_HOURLY),
+            ("整点 + 半点报时（如 8:00、8:30）", MODE_HOURLY_HALF),
+            ("自定义时刻（每天固定几个时间点）", MODE_CUSTOM),
+        ):
+            ttk.Radiobutton(mode_box, text=text, value=value, variable=self.v_mode).pack(anchor="w", pady=2)
+
+        range_box = ttk.Frame(mode_box)
+        range_box.pack(anchor="w", pady=(8, 0))
+        ttk.Label(range_box, text="整点生效时段：").pack(side="left")
+        ttk.Spinbox(range_box, from_=0, to=23, width=4, textvariable=self.v_hour_start,
+                    format="%02.0f").pack(side="left")
+        ttk.Label(range_box, text=" 点 至 ").pack(side="left")
+        ttk.Spinbox(range_box, from_=0, to=23, width=4, textvariable=self.v_hour_end,
+                    format="%02.0f").pack(side="left")
+        ttk.Label(range_box, text=" 点（支持跨夜，如 22 至 2）").pack(side="left")
+        self.range_hint = range_box
+
+        custom_box = ttk.LabelFrame(frame, text="自定义时刻（每行一个，格式 HH:MM）", padding=10)
+        custom_box.pack(fill="both", expand=True, pady=(10, 0))
+        self.custom_box = tk.Text(custom_box, height=6, font=("Consolas", 11), undo=True)
+        self.custom_box.pack(fill="both", expand=True)
+        self.custom_box.insert("1.0", "\n".join(self.cfg.get("custom_times", [])))
+        self.custom_box.bind("<FocusOut>", lambda _e: self.apply())
+        self.custom_frame = custom_box
+        return frame
+
+    def _tab_pomodoro(self, notebook) -> ttk.Frame:
+        frame = ttk.Frame(notebook, padding=12)
+        ttk.Checkbutton(frame, text="启用番茄钟（与整点报时互不冲突）",
+                        variable=self.v_pomo_enabled).pack(anchor="w")
+
+        box = ttk.LabelFrame(frame, text="节奏设置", padding=10)
+        box.pack(fill="x", pady=(10, 0))
+
+        self._spin_row(box, "专注时长（分钟）", self.v_work, 1, 600, 0)
+        self._spin_row(box, "休息时长（分钟）", self.v_break, 1, 120, 1)
+        self._spin_row(box, "循环轮数（0 表示一直循环）", self.v_rounds, 0, 99, 2)
+
+        ttk.Label(
+            frame,
+            text="说明：程序启动后即进入第一个专注周期，专注结束播报休息提示，休息结束播报下一轮专注提示。",
+            foreground="#666", wraplength=640, justify="left",
+        ).pack(anchor="w", pady=(12, 0))
+        return frame
+
+    @staticmethod
+    def _spin_row(parent, label: str, var: tk.IntVar, low: int, high: int, row: int) -> None:
+        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=4)
+        ttk.Spinbox(parent, from_=low, to=high, width=6, textvariable=var).grid(row=row, column=1, sticky="w", padx=8)
+        parent.columnconfigure(2, weight=1)
+
+    def _tab_voice(self, notebook) -> ttk.Frame:
+        frame = ttk.Frame(notebook, padding=12)
+
+        box = ttk.LabelFrame(frame, text="语音", padding=10)
+        box.pack(fill="x")
+        ttk.Label(box, text="发音人：").grid(row=0, column=0, sticky="w")
+        self.voice_combo = ttk.Combobox(box, textvariable=self.v_voice, width=46, state="readonly")
+        self.voice_combo.grid(row=0, column=1, sticky="w", padx=6)
+        ttk.Button(box, text="刷新列表", command=self.refresh_voices).grid(row=0, column=2)
+        self._scale_row(box, "语速", self.v_rate, -10, 10, 1)
+        self._scale_row(box, "语音音量", self.v_volume, 0, 100, 2)
+
+        audio_box = ttk.LabelFrame(frame, text="系统音量处理（静音也能听见）", padding=10)
+        audio_box.pack(fill="x", pady=(12, 0))
+        ttk.Checkbutton(audio_box, text="静音或音量过低时自动调高系统音量",
+                        variable=self.v_boost).grid(row=0, column=0, columnspan=2, sticky="w")
+        self._scale_row(audio_box, "播报时音量", self.v_boost_volume, 1, 100, 1)
+        ttk.Checkbutton(audio_box, text="播报结束后还原原音量与静音状态",
+                        variable=self.v_restore).grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+        self.volume_label = ttk.Label(frame, text="", foreground="#666")
+        self.volume_label.pack(anchor="w", pady=(10, 0))
+        return frame
+
+    def _tab_text(self, notebook) -> ttk.Frame:
+        frame = ttk.Frame(notebook, padding=12)
+        entries = (
+            ("整点文案", self.v_on_hour, "可用占位符 {h} 时、{H} 两位数字时"),
+            ("含分钟文案", self.v_on_minute, "可用占位符 {h} {m} 中文时分、{H} {M} 数字时分"),
+            ("番茄钟·开始专注", self.v_pomo_work, ""),
+            ("番茄钟·开始休息", self.v_pomo_break, ""),
+            ("附加提醒（追加在每句之后）", self.v_suffix, "留空表示不追加，例如：该喝水了"),
+        )
+        for row, (label, var, hint) in enumerate(entries):
+            ttk.Label(frame, text=label).grid(row=row * 2, column=0, sticky="w", pady=(8, 0))
+            ttk.Entry(frame, textvariable=var, width=60).grid(row=row * 2, column=1, sticky="w", padx=8, pady=(8, 0))
+            if hint:
+                ttk.Label(frame, text=hint, foreground="#888",
+                          font=("Microsoft YaHei UI", 8)).grid(row=row * 2 + 1, column=1, sticky="w", padx=8)
+        frame.columnconfigure(1, weight=1)
+        return frame
+
+    def _build_footer(self) -> None:
+        footer = ttk.Frame(self, padding=(16, 8))
+        footer.pack(fill="x")
+
+        options = ttk.Frame(footer)
+        options.pack(fill="x")
+        ttk.Checkbutton(options, text="开机自动启动", variable=self.v_autostart,
+                        command=self.toggle_autostart).pack(side="left")
+        ttk.Checkbutton(options, text="开机后最小化到托盘", variable=self.v_start_min).pack(side="left", padx=12)
+        ttk.Checkbutton(options, text="关闭窗口时最小化到托盘", variable=self.v_tray).pack(side="left")
+        ttk.Button(options, text="打开配置文件", command=self.open_config).pack(side="right")
+
+        log_frame = ttk.LabelFrame(footer, text="运行日志", padding=6)
+        log_frame.pack(fill="both", expand=True, pady=(8, 0))
+        self.log_box = tk.Text(log_frame, height=6, font=("Consolas", 9), state="disabled")
+        self.log_box.pack(fill="both", expand=True)
+
+        self.status_label = ttk.Label(footer, text=f"配置文件：{config.config_path()}",
+                                      foreground="#888", font=("Microsoft YaHei UI", 8))
+        self.status_label.pack(anchor="w", pady=(6, 0))
+
+    @staticmethod
+    def _scale_row(parent, label: str, var: tk.IntVar, low: int, high: int, row: int) -> None:
+        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=(8, 0))
+        tk.Scale(parent, from_=low, to=high, orient="horizontal", variable=var, length=260,
+                 showvalue=True, resolution=1).grid(row=row, column=1, sticky="w", padx=6)
+        parent.columnconfigure(2, weight=1)
+
+    # ---------------- 定时刷新与交互 ----------------
+
+    def _tick_clock(self) -> None:
+        now = timeutil.now()
+        self.clock_label.configure(text=now.strftime("%H:%M:%S"))
+        self.date_label.configure(
+            text=f"{now:%Y 年 %m 月 %d 日}  星期{WEEKDAY_CN[now.weekday()]}（北京时间）"
+        )
+        self.offset_label.configure(text=f"时钟偏差 {timeutil.offset_text()}")
+        self._update_next(now)
+        self._update_volume_state()
+        self._tick_timer = self.after(500, self._tick_clock)
+
+    def _update_next(self, now) -> None:
+        if not self.v_enabled.get() and not self.v_pomo_enabled.get():
+            self.next_label.configure(text="下一次播报：已全部关闭")
+            return
+        item = self.scheduler.next_event()
+        if item is None:
+            self.next_label.configure(text="下一次播报：暂无计划")
+            return
+        moment, kind = item
+        delta = moment - now
+        minutes = int(delta.total_seconds() // 60)
+        if minutes >= 60:
+            remain = f"{minutes // 60} 小时 {minutes % 60} 分"
+        else:
+            remain = f"{minutes} 分钟"
+        self.next_label.configure(text=f"下一次播报：{moment:%m-%d %H:%M}（{kind}），还有 {remain}")
+
+    def _update_volume_state(self) -> None:
+        level, muted = volume.get_state()
+        if level is None:
+            self.volume_label.configure(text="当前系统音量：无法读取")
+        else:
+            state = "已静音" if muted else f"{level}%"
+            self.volume_label.configure(text=f"当前系统主音量：{state}")
+
+    def refresh_controls(self) -> None:
+        """按当前模式启用/禁用相关控件。"""
+        mode = self.v_mode.get()
+        state_custom = "normal" if mode == MODE_CUSTOM else "disabled"
+        state_range = "disabled" if mode == MODE_CUSTOM else "normal"
+        self.custom_box.configure(state=state_custom)
+        for child in self.range_hint.winfo_children():
+            child.configure(state=state_range)
+
+    def refresh_voices(self) -> None:
+        from .speaker import list_voices, pick_voice_name
+
+        voices = list_voices()
+        if not voices:
+            messagebox.showwarning("语音", "未检测到系统语音，播报可能无声。")
+            return
+        self.voice_combo.configure(values=voices)
+        if self.v_voice.get() not in voices:
+            self.v_voice.set(pick_voice_name(self.v_voice.get()))
+        self.after(100, self.apply)
+
+    def speak_now(self) -> None:
+        self.apply()
+        text = time_text(self.cfg, timeutil.now())
+        self._speak_async(text)
+
+    def speak_test(self) -> None:
+        self.apply()
+        text = self.v_test_text.get().strip()
+        if text:
+            self._speak_async(text)
+
+    def _speak_async(self, text: str) -> None:
+        self.log(f"手动播报：{text}")
+
+        def run():
+            self.announcer.announce(text, self.cfg)
+
+        threading.Thread(target=run, name="manual-speak", daemon=True).start()
+
+    def stop_speaking(self) -> None:
+        self.announcer.cancel()
+        self.log("已停止当前播报")
+
+    def toggle_autostart(self) -> None:
+        enable = self.v_autostart.get()
+        ok = autostart.set_enabled(enable)
+        self.cfg["autostart"] = bool(autostart.is_enabled())
+        config.save(self.cfg)
+        if ok:
+            self.log(f"开机自启已{'开启' if enable else '关闭'}")
+            self.state_label.configure(text=f"开机自启：{'已开启' if enable else '已关闭'}")
+        else:
+            messagebox.showerror("开机自启", "写入注册表失败，请以普通用户权限重试。")
+
+    def open_config(self) -> None:
+        path = config.config_path()
+        if os.path.exists(path):
+            subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+        else:
+            subprocess.Popen(["explorer", os.path.normpath(config.CONFIG_DIR)])
+
+    # ---------------- 日志 ----------------
+
+    def log(self, message: str) -> None:
+        now = timeutil.now()
+        self._log_queue.put(f"[{now:%H:%M:%S}] {message}")
+
+    def _drain_log(self) -> None:
+        try:
+            while True:
+                message = self._log_queue.get_nowait()
+                self.log_box.configure(state="normal")
+                self.log_box.insert("end", message + "\n")
+                self.log_box.see("end")
+                self.log_box.configure(state="disabled")
+        except queue.Empty:
+            pass
+        self._log_timer = self.after(300, self._drain_log)
+
+    def handle_event(self, event, text: str) -> None:
+        if text:
+            self.log(f"自动播报：{text}")
+
+    # ---------------- 托盘与退出 ----------------
+
+    def on_close(self) -> None:
+        if self.v_tray.get() and self._ensure_tray():
+            self.withdraw()
+            self.log("已最小化到系统托盘，双击托盘图标可重新打开")
+            return
+        self.quit_app()
+
+    def _ensure_tray(self) -> bool:
+        if self._tray is not None:
+            return True
+        if TrayIcon is None:
+            return False
+        try:
+            self._tray = TrayIcon(on_open=self.show_window, on_quit=self.quit_app)
+            self._tray.start()
+            return True
+        except Exception as exc:  # noqa: BLE001
+            self.log(f"托盘初始化失败：{exc}")
+            self._tray = None
+            return False
+
+    def show_window(self) -> None:
+        self.after(0, self._show_window)
+
+    def _show_window(self) -> None:
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+
+    def quit_app(self) -> None:
+        for timer in (getattr(self, "_tick_timer", None), getattr(self, "_log_timer", None)):
+            if timer:
+                try:
+                    self.after_cancel(timer)
+                except tk.TclError:
+                    pass
+        if self._tray is not None:
+            self._tray.stop()
+            self._tray = None
+        self.scheduler.stop()
+        self.destroy()
+
+
+def create(cfg: Dict[str, Any], announcer, scheduler, start_minimized: bool = False) -> App:
+    try:
+        ttk.Style().theme_use("vista")
+    except tk.TclError:
+        pass
+    app = App(cfg, announcer, scheduler, start_minimized)
+    app.refresh_voices()
+    app.refresh_controls()
+    app.log("程序已启动，配置即时生效")
+    return app
