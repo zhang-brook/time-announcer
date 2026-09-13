@@ -78,7 +78,8 @@ time-announcer/
 
 ```powershell
 pip install pyinstaller
-pyinstaller --noconfirm --onefile --windowed --name TimeAnnouncer main.py
+# pyinstaller --noconfirm --onefile --windowed --name TimeAnnouncer main.py
+python -m PyInstaller --noconfirm --onefile --windowed --name TimeAnnouncer main.py
 ```
 
 产物在 `dist\TimeAnnouncer.exe`，可自行放到固定目录并重新勾选开机自启。
