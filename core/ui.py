@@ -45,8 +45,8 @@ class App(tk.Tk):
         self._tray = None
 
         self.title(f"{config.APP_NAME} · 整点北京时间播报")
-        self.geometry("760x660")
-        self.minsize(600, 600)
+        self.geometry("760x800")
+        self.minsize(680, 800)
 
         self._init_vars()
         self._build_header()
