@@ -7,10 +7,12 @@ import queue
 import subprocess
 import threading
 import tkinter as tk
+import webbrowser
 from tkinter import messagebox, ttk
 from typing import Any, Dict, List, Optional
 
 from . import autostart, config, timeutil, volume
+from . import APP_NAME, APP_REPO_URL, APP_TITLE, APP_VERSION
 from .config import MODE_CUSTOM, MODE_HOURLY, MODE_HOURLY_HALF
 from .scheduler import parse_hhmm, time_text
 
@@ -22,7 +24,7 @@ except Exception:  # noqa: BLE001
 WEEKDAY_CN = ["一", "二", "三", "四", "五", "六", "日"]
 FONT_NORMAL = ("Microsoft YaHei UI", 10)
 FONT_BOLD = ("Microsoft YaHei UI", 10, "bold")
-FONT_CLOCK = ("Microsoft YaHei UI", 30, "bold")
+FONT_CLOCK = ("Microsoft YaHei UI", 26, "bold")
 
 
 class App(tk.Tk):
@@ -30,8 +32,9 @@ class App(tk.Tk):
         super().__init__()
         # 必须在根窗口创建之后再设置主题，否则 tkinter 会隐式创建一个
         # 标题为 "tk" 的空白根窗口
+        style = ttk.Style(self)
         try:
-            ttk.Style(self).theme_use("vista")
+            style.theme_use("vista")
         except tk.TclError:
             pass
         self.cfg = cfg
@@ -42,8 +45,8 @@ class App(tk.Tk):
         self._tray = None
 
         self.title(f"{config.APP_NAME} · 整点北京时间播报")
-        self.geometry("760x640")
-        self.minsize(720, 600)
+        self.geometry("760x660")
+        self.minsize(600, 600)
 
         self._init_vars()
         self._build_header()
@@ -189,25 +192,36 @@ class App(tk.Tk):
         self.clock_label.grid(row=0, column=0, rowspan=2, sticky="w")
 
         info = ttk.Frame(header)
-        info.grid(row=0, column=1, rowspan=2, sticky="w", padx=(24, 0))
-        self.date_label = ttk.Label(info, text="", font=FONT_NORMAL)
+        info.grid(row=0, column=1, rowspan=2, sticky="new", padx=(20, 0))
+        # 信息列可伸缩：窗口变窄时文字自动换行，而不是把右侧操作区挤没
+        header.columnconfigure(1, weight=1)
+        self.date_label = ttk.Label(info, text="", font=FONT_NORMAL, justify="left", wraplength=440)
         self.date_label.pack(anchor="w")
-        self.next_label = ttk.Label(info, text="", font=FONT_NORMAL)
+        self.next_label = ttk.Label(info, text="", font=FONT_NORMAL, justify="left", wraplength=440)
         self.next_label.pack(anchor="w", pady=(4, 0))
-        self.state_label = ttk.Label(info, text="", font=FONT_NORMAL, foreground="#0078d4")
+        self.state_label = ttk.Label(info, text="", font=FONT_NORMAL, foreground="#0078d4",
+                                     justify="left", wraplength=440)
         self.state_label.pack(anchor="w")
 
+        # 操作区纵向排两行，避免窗口不够宽时按钮和输入框被挤出可视范围
         actions = ttk.Frame(header)
         actions.grid(row=0, column=2, sticky="e")
-        header.columnconfigure(2, weight=1)
-        ttk.Button(actions, text="立即播报", command=self.speak_now).pack(side="left")
-        ttk.Button(actions, text="试听", command=self.speak_test).pack(side="left", padx=6)
-        ttk.Button(actions, text="停止", command=self.stop_speaking).pack(side="left")
-        ttk.Entry(actions, textvariable=self.v_test_text, width=18).pack(side="left", padx=(12, 0))
-        ttk.Label(actions, text="← 试听文本", foreground="#666").pack(side="left")
 
+        btns = ttk.Frame(actions)
+        btns.pack(anchor="e")
+        ttk.Button(btns, text="立即播报", command=self.speak_now).pack(fill="x")
+        # 仅在播报进行中可用，其余时间置灰
+        self.stop_button = ttk.Button(btns, text="停止", command=self.stop_speaking, state="disabled")
+        self.stop_button.pack(fill="x", pady=(6, 0))
+        self._stop_enabled = False
+
+        # 按实际需要给操作列保底宽度，保证窄窗口下按钮完整可见
+        self.update_idletasks()
+        header.columnconfigure(2, minsize=actions.winfo_reqwidth())
+
+        # 时钟偏差单独占一行，不再挤压右上角的按钮空间
         self.offset_label = ttk.Label(header, text="", font=("Microsoft YaHei UI", 8), foreground="#888")
-        self.offset_label.grid(row=1, column=2, sticky="e", pady=(6, 0))
+        self.offset_label.grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
     def _build_tabs(self) -> None:
         notebook = ttk.Notebook(self, padding=(12, 4))
@@ -219,6 +233,7 @@ class App(tk.Tk):
             (self._tab_pomodoro, "番茄钟"),
             (self._tab_voice, "语音与音量"),
             (self._tab_text, "播报文案"),
+            (self._tab_about, "关于"),
         ):
             tab = builder(notebook)  # 页面必须是 Notebook 的子控件
             self.tabs.append(tab)
@@ -285,7 +300,7 @@ class App(tk.Tk):
         ttk.Label(
             frame,
             text="说明：程序启动后即进入第一个专注周期，专注结束播报休息提示，休息结束播报下一轮专注提示。",
-            foreground="#666", wraplength=640, justify="left",
+            foreground="#666", wraplength=520, justify="left",
         ).pack(anchor="w", pady=(12, 0))
         return frame
 
@@ -301,11 +316,20 @@ class App(tk.Tk):
         box = ttk.LabelFrame(frame, text="语音", padding=10)
         box.pack(fill="x")
         ttk.Label(box, text="发音人：").grid(row=0, column=0, sticky="w")
-        self.voice_combo = ttk.Combobox(box, textvariable=self.v_voice, width=46, state="readonly")
-        self.voice_combo.grid(row=0, column=1, sticky="w", padx=6)
+        self.voice_combo = ttk.Combobox(box, textvariable=self.v_voice, width=32, state="readonly")
+        self.voice_combo.grid(row=0, column=1, sticky="ew", padx=6)
+        box.columnconfigure(1, weight=1)
         ttk.Button(box, text="刷新列表", command=self.refresh_voices).grid(row=0, column=2)
         self._scale_row(box, "语速", self.v_rate, -10, 10, 1)
         self._scale_row(box, "语音音量", self.v_volume, 0, 100, 2)
+
+        ttk.Separator(box, orient="horizontal").grid(row=3, column=0, columnspan=3, sticky="ew", pady=(10, 6))
+        test_row = ttk.Frame(box)
+        test_row.grid(row=4, column=0, columnspan=3, sticky="ew")
+        test_row.columnconfigure(1, weight=1)
+        ttk.Label(test_row, text="试听文本：").grid(row=0, column=0, sticky="w")
+        ttk.Entry(test_row, textvariable=self.v_test_text).grid(row=0, column=1, sticky="ew", padx=8)
+        ttk.Button(test_row, text="试听", command=self.speak_test).grid(row=0, column=2)
 
         audio_box = ttk.LabelFrame(frame, text="系统音量处理（静音也能听见）", padding=10)
         audio_box.pack(fill="x", pady=(12, 0))
@@ -330,7 +354,7 @@ class App(tk.Tk):
         )
         for row, (label, var, hint) in enumerate(entries):
             ttk.Label(frame, text=label).grid(row=row * 2, column=0, sticky="w", pady=(8, 0))
-            ttk.Entry(frame, textvariable=var, width=60).grid(row=row * 2, column=1, sticky="w", padx=8, pady=(8, 0))
+            ttk.Entry(frame, textvariable=var, width=40).grid(row=row * 2, column=1, sticky="ew", padx=8, pady=(8, 0))
             if hint:
                 ttk.Label(frame, text=hint, foreground="#888",
                           font=("Microsoft YaHei UI", 8)).grid(row=row * 2 + 1, column=1, sticky="w", padx=8)
@@ -407,6 +431,7 @@ class App(tk.Tk):
         )
         self.offset_label.configure(text=f"时钟偏差 {timeutil.offset_text()}")
         self._update_next(now)
+        self._update_stop_state()
         self._update_volume_state()
         self._tick_timer = self.after(500, self._tick_clock)
 
@@ -426,6 +451,13 @@ class App(tk.Tk):
         else:
             remain = f"{minutes} 分钟"
         self.next_label.configure(text=f"下一次播报：{moment:%m-%d %H:%M}（{kind}），还有 {remain}")
+
+    def _update_stop_state(self) -> None:
+        """「停止」按钮只在播报进行中可用。"""
+        enabled = self.announcer.is_speaking
+        if enabled != self._stop_enabled:
+            self._stop_enabled = enabled
+            self.stop_button.configure(state="normal" if enabled else "disabled")
 
     def _update_volume_state(self) -> None:
         level, muted = volume.get_state()

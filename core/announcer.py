@@ -17,7 +17,14 @@ class Announcer:
         self._lock = threading.Lock()
         self._voice_name: Optional[str] = None
         self._voice_cfg_name: Optional[str] = None
+        self._speaking = False
         self.on_state = on_state or (lambda _msg: None)
+
+    @property
+    def is_speaking(self) -> bool:
+        """当前是否有播报正在进行（供界面决定「停止」是否可用）。"""
+        with self._lock:
+            return self._speaking
 
     def cancel(self) -> None:
         self._speaker.cancel()
@@ -38,6 +45,8 @@ class Announcer:
         if audio_cfg.get("boost_enabled", True):
             snapshot = self._boost_volume(int(audio_cfg.get("boost_volume", 60)))
 
+        with self._lock:
+            self._speaking = True
         try:
             self.on_state(f"播报中：{text}")
             ok = self._speaker.speak(
@@ -48,6 +57,8 @@ class Announcer:
             )
             return ok
         finally:
+            with self._lock:
+                self._speaking = False
             if snapshot is not None and audio_cfg.get("restore_after", True):
                 level, muted = snapshot
                 volume.set_volume(level)
