@@ -159,7 +159,10 @@ class Scheduler:
                     if parsed:
                         moments.append(base + timedelta(hours=parsed[0], minutes=parsed[1]))
             else:
-                hours = [h for h in range(24) if _in_hour_range(h, cfg.get("hour_start", 0), cfg.get("hour_end", 23))]
+                if cfg.get("hour_all_day", False):
+                    hours = list(range(24))
+                else:
+                    hours = [h for h in range(24) if _in_hour_range(h, cfg.get("hour_start", 0), cfg.get("hour_end", 23))]
                 for hour in hours:
                     moments.append(base + timedelta(hours=hour))
                     if mode == MODE_HOURLY_HALF:

@@ -73,6 +73,7 @@ class App(tk.Tk):
         self.v_mode = tk.StringVar(value=cfg.get("mode", MODE_HOURLY))
         self.v_hour_start = tk.IntVar(value=cfg.get("hour_start", 8))
         self.v_hour_end = tk.IntVar(value=cfg.get("hour_end", 22))
+        self.v_hour_all_day = tk.BooleanVar(value=cfg.get("hour_all_day", False))
 
         pomo = cfg.get("pomodoro", {})
         self.v_pomo_enabled = tk.BooleanVar(value=pomo.get("enabled", False))
@@ -107,7 +108,7 @@ class App(tk.Tk):
 
     def _all_vars(self) -> List[tk.Variable]:
         return [
-            self.v_enabled, self.v_mode, self.v_hour_start, self.v_hour_end,
+            self.v_enabled, self.v_mode, self.v_hour_start, self.v_hour_end, self.v_hour_all_day,
             self.v_pomo_enabled, self.v_work, self.v_break, self.v_rounds,
             self.v_voice, self.v_rate, self.v_volume,
             self.v_boost, self.v_boost_volume, self.v_restore,
@@ -133,6 +134,7 @@ class App(tk.Tk):
         cfg["mode"] = self.v_mode.get()
         cfg["hour_start"] = self._clamp(self.v_hour_start, 0, 23)
         cfg["hour_end"] = self._clamp(self.v_hour_end, 0, 23)
+        cfg["hour_all_day"] = bool(self.v_hour_all_day.get())
 
         times: List[str] = []
         for line in self.custom_box.get("1.0", "end").splitlines():
@@ -239,9 +241,15 @@ class App(tk.Tk):
         ):
             ttk.Radiobutton(mode_box, text=text, value=value, variable=self.v_mode).pack(anchor="w", pady=2)
 
+        self.all_day_check = ttk.Checkbutton(
+            mode_box, text="全天生效（不限制时段，0-23 点整点/半点均播报）",
+            variable=self.v_hour_all_day,
+        )
+        self.all_day_check.pack(anchor="w", pady=(8, 0))
+
         range_box = ttk.Frame(mode_box)
-        range_box.pack(anchor="w", pady=(8, 0))
-        ttk.Label(range_box, text="整点生效时段：").pack(side="left")
+        range_box.pack(anchor="w", pady=(4, 0))
+        ttk.Label(range_box, text="生效时段：").pack(side="left")
         ttk.Spinbox(range_box, from_=0, to=23, width=4, textvariable=self.v_hour_start,
                     format="%02.0f").pack(side="left")
         ttk.Label(range_box, text=" 点 至 ").pack(side="left")
@@ -395,9 +403,13 @@ class App(tk.Tk):
     def refresh_controls(self) -> None:
         """按当前模式启用/禁用相关控件。"""
         mode = self.v_mode.get()
-        state_custom = "normal" if mode == MODE_CUSTOM else "disabled"
-        state_range = "disabled" if mode == MODE_CUSTOM else "normal"
+        is_custom = mode == MODE_CUSTOM
+        state_custom = "normal" if is_custom else "disabled"
+        all_day = self.v_hour_all_day.get()
+        # 时段范围仅在非自定义模式、且未勾选全天生效时可用
+        state_range = "disabled" if (is_custom or all_day) else "normal"
         self.custom_box.configure(state=state_custom)
+        self.all_day_check.configure(state="disabled" if is_custom else "normal")
         for child in self.range_hint.winfo_children():
             child.configure(state=state_range)
 

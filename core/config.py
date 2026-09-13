@@ -29,6 +29,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "mode": MODE_HOURLY,
     "hour_start": 8,                # 整点报时生效小时（含）
     "hour_end": 22,                 # 整点报时生效小时（含）
+    "hour_all_day": False,          # 为 True 时不限时段时间，全天整点/半点均播报
     "custom_times": ["09:00", "12:00", "18:00"],
 
     "pomodoro": {
