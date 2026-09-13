@@ -438,14 +438,19 @@ class App(tk.Tk):
 
     def toggle_autostart(self) -> None:
         enable = self.v_autostart.get()
-        ok = autostart.set_enabled(enable)
+        ok, err = autostart.set_enabled(enable)
         self.cfg["autostart"] = bool(autostart.is_enabled())
+        self.v_autostart.set(self.cfg["autostart"])
         config.save(self.cfg)
         if ok:
             self.log(f"开机自启已{'开启' if enable else '关闭'}")
             self.state_label.configure(text=f"开机自启：{'已开启' if enable else '已关闭'}")
         else:
-            messagebox.showerror("开机自启", "写入注册表失败，请以普通用户权限重试。")
+            self.log(f"开机自启设置失败：{err}")
+            messagebox.showerror(
+                "开机自启",
+                f"写入注册表失败，请以普通用户权限重试。\n\n{err}",
+            )
 
     def open_config(self) -> None:
         path = config.config_path()

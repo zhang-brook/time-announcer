@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
-from typing import Optional
+from typing import Optional, Tuple
 
 import winreg
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 VALUE_NAME = "TimeAnnouncer"
+
+logger = logging.getLogger(__name__)
 
 
 def _pythonw() -> str:
@@ -34,25 +37,29 @@ def is_enabled() -> bool:
         return False
 
 
-def enable() -> bool:
+def enable() -> Tuple[bool, Optional[str]]:
     try:
-        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_WRITE) as key:
             winreg.SetValueEx(key, VALUE_NAME, 0, winreg.REG_SZ, launch_command())
-        return True
-    except OSError:
-        return False
+        return True, None
+    except OSError as exc:
+        msg = f"无法写入注册表: {exc}"
+        logger.warning(msg)
+        return False, msg
 
 
-def disable() -> bool:
+def disable() -> Tuple[bool, Optional[str]]:
     try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_WRITE) as key:
             winreg.DeleteValue(key, VALUE_NAME)
-        return True
-    except OSError:
-        return False
+        return True, None
+    except OSError as exc:
+        msg = f"无法删除注册表项: {exc}"
+        logger.warning(msg)
+        return False, msg
 
 
-def set_enabled(enabled: bool) -> bool:
+def set_enabled(enabled: bool) -> Tuple[bool, Optional[str]]:
     return enable() if enabled else disable()
 
 
