@@ -337,6 +337,38 @@ class App(tk.Tk):
         frame.columnconfigure(1, weight=1)
         return frame
 
+    def _tab_about(self, notebook) -> ttk.Frame:
+        frame = ttk.Frame(notebook, padding=16)
+
+        ttk.Label(frame, text=f"{APP_TITLE}（{APP_NAME}）",
+                  font=("Microsoft YaHei UI", 16, "bold")).pack(anchor="w")
+        ttk.Label(frame, text=f"版本 {APP_VERSION}", font=FONT_NORMAL,
+                  foreground="#666").pack(anchor="w", pady=(6, 0))
+
+        ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=14)
+
+        ttk.Label(frame, text="项目主页", font=FONT_BOLD).pack(anchor="w")
+        link = ttk.Label(frame, text=APP_REPO_URL, foreground="#0066cc",
+                         font=("Microsoft YaHei UI", 10, "underline"), cursor="hand2")
+        link.pack(anchor="w", pady=(4, 0))
+        link.bind("<Button-1>", lambda _e: self.open_repo())
+        ttk.Button(frame, text="打开项目主页", command=self.open_repo).pack(anchor="w", pady=(10, 0))
+
+        ttk.Label(
+            frame,
+            text="按北京时间整点（或自定义时刻）语音播报当前时间，支持番茄钟提醒、\n"
+                 "系统音量自动补偿、开机自启与托盘常驻。",
+            justify="left", foreground="#666",
+        ).pack(anchor="w", pady=(16, 0))
+        return frame
+
+    def open_repo(self) -> None:
+        try:
+            webbrowser.open(APP_REPO_URL)
+        except Exception as exc:  # noqa: BLE001
+            self.log(f"打开项目主页失败：{exc}")
+            messagebox.showerror("关于", f"无法打开浏览器。\n\n{APP_REPO_URL}")
+
     def _build_footer(self) -> None:
         footer = ttk.Frame(self, padding=(16, 8))
         footer.pack(fill="x")
