@@ -39,7 +39,7 @@ python main.py --minimized    # 启动后最小化到系统托盘
 
 | 字段 | 说明 |
 | --- | --- |
-| `enabled` | 总开关，关闭后不再播报 |
+| `enabled` | 报时总开关，关闭后不再整点/自定义报时（不影响番茄钟） |
 | `mode` | `hourly` / `hourly_half` / `custom` |
 | `hour_start` / `hour_end` | 整点报时生效时段（含端点，可跨夜） |
 | `custom_times` | 自定义时刻列表，格式 `HH:MM` |

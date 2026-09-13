@@ -108,15 +108,13 @@ class Scheduler:
 
     def _tick(self) -> None:
         cfg = self._cfg_getter()
-        if not cfg.get("enabled", True):
-            self._pomo = None
-            self._pomo_signature = None
-            return
-
         now = timeutil.now()
         self._prune(now)
 
-        event = self._due_time_event(now, cfg) or self._due_pomodoro_event(now, cfg)
+        # 总开关只控制报时；番茄钟由自己的开关控制，互不牵连
+        event = self._due_time_event(now, cfg) if cfg.get("enabled", True) else None
+        if event is None:
+            event = self._due_pomodoro_event(now, cfg)
         if event is None:
             return
 
@@ -192,10 +190,10 @@ class Scheduler:
             }
             return None
 
-        if now < self._pomo["deadline"]:
+        state = self._pomo
+        if state["phase"] == "done" or now < state["deadline"]:
             return None
 
-        state = self._pomo
         text_cfg = cfg.get("text", {})
         if state["phase"] == "work":
             event = Event(
@@ -205,15 +203,12 @@ class Scheduler:
                 at=now,
             )
             rounds = signature[2]
-            finished = rounds > 0 and state["round"] >= rounds
-            if finished:
+            if rounds > 0 and state["round"] >= rounds:
                 state["phase"] = "done"
-                state["deadline"] = now + timedelta(days=3650)
+                state["deadline"] = None
             else:
                 state["phase"] = "break"
                 state["deadline"] = now + timedelta(minutes=signature[1])
-                if rounds == 0:
-                    state["round"] += 1
         elif state["phase"] == "break":
             event = Event(
                 key=f"pomo|work|{now:%Y-%m-%d %H:%M}",
@@ -222,6 +217,7 @@ class Scheduler:
                 at=now,
             )
             state["phase"] = "work"
+            state["round"] += 1
             state["deadline"] = now + timedelta(minutes=signature[0])
         else:
             return None
@@ -231,29 +227,29 @@ class Scheduler:
         return event
 
     def pomodoro_deadline(self) -> Optional[datetime]:
-        return self._pomo["deadline"] if self._pomo else None
+        if not self._pomo or self._pomo.get("phase") == "done":
+            return None
+        return self._pomo["deadline"]
 
     # ---------- 供界面展示 ----------
 
     def next_event(self) -> Optional[Tuple[datetime, str]]:
         """返回下一次触发的 (时间, 说明)。"""
         cfg = self._cfg_getter()
-        if not cfg.get("enabled", True):
-            return None
-
         now = timeutil.now()
         candidates: List[Tuple[datetime, str]] = []
 
-        for moment in self._candidate_moments(now, cfg, day_offsets=(0, 1)):
-            if moment <= now:
-                continue
-            if moment.minute == 0:
-                kind = "整点报时"
-            else:
-                kind = "定点报时"
-            if moment.date() != now.date():
-                kind = "明日" + kind
-            candidates.append((moment, kind))
+        if cfg.get("enabled", True):
+            for moment in self._candidate_moments(now, cfg, day_offsets=(0, 1)):
+                if moment <= now:
+                    continue
+                if moment.minute == 0:
+                    kind = "整点报时"
+                else:
+                    kind = "定点报时"
+                if moment.date() != now.date():
+                    kind = "明日" + kind
+                candidates.append((moment, kind))
 
         pomo = cfg.get("pomodoro", {})
         deadline = self.pomodoro_deadline()
