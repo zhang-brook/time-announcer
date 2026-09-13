@@ -28,6 +28,12 @@ FONT_CLOCK = ("Microsoft YaHei UI", 30, "bold")
 class App(tk.Tk):
     def __init__(self, cfg: Dict[str, Any], announcer, scheduler, start_minimized: bool = False):
         super().__init__()
+        # 必须在根窗口创建之后再设置主题，否则 tkinter 会隐式创建一个
+        # 标题为 "tk" 的空白根窗口
+        try:
+            ttk.Style(self).theme_use("vista")
+        except tk.TclError:
+            pass
         self.cfg = cfg
         self.announcer = announcer
         self.scheduler = scheduler
@@ -520,10 +526,6 @@ class App(tk.Tk):
 
 
 def create(cfg: Dict[str, Any], announcer, scheduler, start_minimized: bool = False) -> App:
-    try:
-        ttk.Style().theme_use("vista")
-    except tk.TclError:
-        pass
     app = App(cfg, announcer, scheduler, start_minimized)
     app.refresh_voices()
     app.refresh_controls()
