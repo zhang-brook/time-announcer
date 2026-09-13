@@ -408,7 +408,15 @@ class App(tk.Tk):
         all_day = self.v_hour_all_day.get()
         # 时段范围仅在非自定义模式、且未勾选全天生效时可用
         state_range = "disabled" if (is_custom or all_day) else "normal"
-        self.custom_box.configure(state=state_custom)
+        self.custom_box.configure(
+            state=state_custom,
+            background="#ffffff" if is_custom else "#ececec",
+            foreground="#000000" if is_custom else "#888888",
+        )
+        self.custom_frame.configure(
+            text="自定义时刻（每行一个，格式 HH:MM）"
+            + ("" if is_custom else "  · 未启用")
+        )
         self.all_day_check.configure(state="disabled" if is_custom else "normal")
         for child in self.range_hint.winfo_children():
             child.configure(state=state_range)
