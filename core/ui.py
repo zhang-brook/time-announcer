@@ -38,6 +38,7 @@ class App(tk.Tk):
             style.theme_use("vista")
         except tk.TclError:
             pass
+        style.configure("Master.TCheckbutton", font=FONT_BOLD)
         self.cfg = cfg
         self.announcer = announcer
         self.scheduler = scheduler
@@ -87,6 +88,7 @@ class App(tk.Tk):
 
     def _init_vars(self) -> None:
         cfg = self.cfg
+        self.v_master = tk.BooleanVar(value=cfg.get("master_enabled", True))
         self.v_enabled = tk.BooleanVar(value=cfg.get("enabled", True))
         self.v_mode = tk.StringVar(value=cfg.get("mode", MODE_HOURLY))
         self.v_hour_start = tk.IntVar(value=cfg.get("hour_start", 8))
@@ -127,6 +129,7 @@ class App(tk.Tk):
 
     def _all_vars(self) -> List[tk.Variable]:
         return [
+            self.v_master,
             self.v_enabled, self.v_mode, self.v_hour_start, self.v_hour_end, self.v_hour_all_day,
             self.v_pomo_enabled, self.v_work, self.v_break, self.v_rounds,
             self.v_voice, self.v_rate, self.v_volume,
@@ -149,6 +152,7 @@ class App(tk.Tk):
 
     def collect(self) -> None:
         cfg = self.cfg
+        cfg["master_enabled"] = bool(self.v_master.get())
         cfg["enabled"] = bool(self.v_enabled.get())
         cfg["mode"] = self.v_mode.get()
         cfg["hour_start"] = self._clamp(self.v_hour_start, 0, 23)
@@ -237,6 +241,19 @@ class App(tk.Tk):
         # 时钟偏差单独占一行，不再挤压右上角的按钮空间
         self.offset_label = ttk.Label(header, text="", font=("Microsoft YaHei UI", 8), foreground="#888")
         self.offset_label.grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
+
+        # 全局总开关放在标题区，任何标签页下都能随手开关
+        self.master_check = ttk.Checkbutton(
+            header, text=self._master_text(),
+            variable=self.v_master, style="Master.TCheckbutton",
+        )
+        self.master_check.grid(row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
+
+    def _master_text(self) -> str:
+        """总开关文案随状态变化，关闭时说明影响范围。"""
+        if self.v_master.get():
+            return "全局提醒总开关（已开启）"
+        return "全局提醒总开关（已关闭，整点报时与番茄钟均不提醒）"
 
     def _build_tabs(self) -> None:
         notebook = ttk.Notebook(self, padding=(12, 4))
@@ -454,6 +471,9 @@ class App(tk.Tk):
         self._tick_timer = self.after(500, self._tick_clock)
 
     def _update_next(self, now) -> None:
+        if not self.v_master.get():
+            self.next_label.configure(text="下一次播报：总开关已关闭，全部提醒已暂停")
+            return
         if not self.v_enabled.get() and not self.v_pomo_enabled.get():
             self.next_label.configure(text="下一次播报：已全部关闭")
             return
@@ -487,6 +507,8 @@ class App(tk.Tk):
 
     def refresh_controls(self) -> None:
         """按当前模式启用/禁用相关控件。"""
+        self.master_check.configure(text=self._master_text())
+
         mode = self.v_mode.get()
         is_custom = mode == MODE_CUSTOM
         state_custom = "normal" if is_custom else "disabled"

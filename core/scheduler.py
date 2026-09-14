@@ -111,7 +111,11 @@ class Scheduler:
         now = timeutil.now()
         self._prune(now)
 
-        # 总开关只控制报时；番茄钟由自己的开关控制，互不牵连
+        # 全局总开关：关闭后报时与番茄钟一律不触发
+        if not cfg.get("master_enabled", True):
+            return
+
+        # 报时开关只控制报时；番茄钟由自己的开关控制，互不牵连
         event = self._due_time_event(now, cfg) if cfg.get("enabled", True) else None
         if event is None:
             event = self._due_pomodoro_event(now, cfg)
@@ -238,6 +242,9 @@ class Scheduler:
         cfg = self._cfg_getter()
         now = timeutil.now()
         candidates: List[Tuple[datetime, str]] = []
+
+        if not cfg.get("master_enabled", True):
+            return None
 
         if cfg.get("enabled", True):
             for moment in self._candidate_moments(now, cfg, day_offsets=(0, 1)):

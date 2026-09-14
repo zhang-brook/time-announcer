@@ -24,7 +24,8 @@ MODE_HOURLY_HALF = "hourly_half"    # 整点 + 半点报时
 MODE_CUSTOM = "custom"              # 自定义时刻
 
 DEFAULT_CONFIG: Dict[str, Any] = {
-    "enabled": True,                # 总开关：关闭后不播报
+    "master_enabled": True,         # 全局总开关：关闭后报时与番茄钟都不提醒
+    "enabled": True,                # 报时开关：关闭后不报时（不影响番茄钟）
 
     "mode": MODE_HOURLY,
     "hour_start": 8,                # 整点报时生效小时（含）
