@@ -2,6 +2,21 @@
 
 Windows 桌面小工具：到点用中文语音大声播报北京时间，支持整点 / 整点+半点 / 自定义时刻 / 番茄钟，静音时也能自动调高音量播报后还原，带图形界面与开机自启。
 
+<table>
+  <tr>
+    <td align="center">
+      <img width="90%" alt="Image" src="https://github.com/user-attachments/assets/f6318db6-7cb6-4dcd-8ad8-6ab63e8a6f06" />
+      <br><br>
+      <img width="90%" alt="image" src="https://github.com/user-attachments/assets/a6e22338-c933-4acf-a733-ee853dfd8ed0" />
+    </td>
+    <td align="center">
+      <img width="90%" alt="image" src="https://github.com/user-attachments/assets/65f947e4-0ae2-4406-8316-5af9bc915bcd" />
+      <br><br>
+      <img width="90%" alt="image" src="https://github.com/user-attachments/assets/a55a8fc8-4102-48a1-ae56-b3577e24b266" />
+    </td>
+  </tr>
+</table>
+
 ## 环境要求
 
 - Windows 10 / 11
