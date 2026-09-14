@@ -9,6 +9,7 @@ from typing import Optional, Tuple
 
 import winreg
 
+# 计算机\HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 VALUE_NAME = "TimeAnnouncer"
 
@@ -23,18 +24,18 @@ def _pythonw() -> str:
 
 
 def launch_command() -> str:
-    """生成自启命令行（指向 main.py）。"""
+    """生成自启命令行：打包环境只指向 exe，源码环境指向 pythonw + main.py。"""
+    # exe
+    if getattr(sys, "frozen", False):
+        return f'"{os.path.abspath(sys.executable)}"'
+    # 源码运行
     script = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), "main.py"))
     return f'"{_pythonw()}" "{script}"'
 
 
 def is_enabled() -> bool:
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
-            value, _ = winreg.QueryValueEx(key, VALUE_NAME)
-            return bool(value)
-    except OSError:
-        return False
+    """只判断启动项是否存在；指向是否正确由启动时的检查处理。"""
+    return bool(current_command())
 
 
 def enable() -> Tuple[bool, Optional[str]]:

@@ -70,6 +70,9 @@ class App(tk.Tk):
             else:
                 self.deiconify()
 
+        # 等主窗口显示后再检查启动项，避免弹窗出现在窗口之前
+        self.after(300, self._check_autostart)
+
     def _apply_icon(self) -> None:
         """标题栏/任务栏图标与托盘、exe 共用同一份 assets/app.ico。"""
         path = icon_path()
@@ -556,6 +559,60 @@ class App(tk.Tk):
                 "开机自启",
                 f"写入注册表失败，请以普通用户权限重试。\n\n{err}",
             )
+
+    def _check_autostart(self) -> None:
+        """启动项指向的不是当前程序时（如程序被移动过），提示用户修正。"""
+        current = autostart.current_command()
+        if not current or current == autostart.launch_command():
+            return
+        choice = self._ask_autostart_fix(current)
+        if choice == "ignore":
+            self.log("已忽略启动项路径变化")
+            return
+        enable = choice == "update"
+        ok, err = autostart.set_enabled(enable)
+        if ok:
+            self.log("开机自启已指向当前程序" if enable else "已删除开机自启项")
+        else:
+            self.log(f"开机自启设置失败：{err}")
+            messagebox.showerror("开机自启", err)
+        self.v_autostart.set(autostart.is_enabled())
+        self.cfg["autostart"] = self.v_autostart.get()
+        config.save(self.cfg)
+
+    def _ask_autostart_fix(self, current: str) -> str:
+        """三选一：更新 / 删除 / 忽略，返回对应动作。"""
+        dialog = tk.Toplevel(self)
+        dialog.title("开机自启")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        choice = {"value": "ignore"}
+
+        text = (
+            "检测到开机自启项指向的程序已改变，可能是程序所在目录发生变化。\n\n"
+            f"启动项：{current}\n"
+            f"当前程序：{autostart.launch_command()}\n\n"
+            "是否将启动项更新为指向当前程序？"
+        )
+        ttk.Label(dialog, text=text, justify="left", wraplength=560).pack(padx=16, pady=(16, 12))
+
+        def choose(value: str) -> None:
+            choice["value"] = value
+            dialog.destroy()
+
+        buttons = ttk.Frame(dialog)
+        buttons.pack(padx=16, pady=(0, 14), anchor="e")
+        for label, value in (("更新（推荐）", "update"), ("删除启动项", "delete"), ("忽略本次", "ignore")):
+            ttk.Button(buttons, text=label, command=lambda v=value: choose(v)).pack(side="left", padx=(8, 0))
+
+        dialog.protocol("WM_DELETE_WINDOW", lambda: choose("ignore"))
+        dialog.update_idletasks()
+        x = self.winfo_rootx() + max((self.winfo_width() - dialog.winfo_width()) // 2, 0)
+        y = self.winfo_rooty() + max((self.winfo_height() - dialog.winfo_height()) // 3, 0)
+        dialog.geometry(f"+{x}+{y}")
+        dialog.grab_set()
+        self.wait_window(dialog)
+        return choice["value"]
 
     def open_config(self) -> None:
         path = config.config_path()
