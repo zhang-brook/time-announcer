@@ -1,5 +1,7 @@
 # 北京时间播报器（TimeAnnouncer）
 
+[GitHub](https://github.com/zhang-brook/time-announcer) | [Gitee](https://gitee.com/zhang-brook/time-announcer)
+
 Windows 桌面小工具：到点用中文语音大声播报北京时间，支持整点 / 整点+半点 / 自定义时刻 / 番茄钟，静音时也能自动调高音量播报后还原，带图形界面与开机自启。
 
 <table>
