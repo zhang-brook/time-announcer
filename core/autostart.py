@@ -23,14 +23,16 @@ def _pythonw() -> str:
     return candidate if os.path.exists(candidate) else exe
 
 
-def launch_command() -> str:
-    """生成自启命令行：打包环境只指向 exe，源码环境指向 pythonw + main.py。"""
+def launch_command(minimized: bool = False) -> str:
+    """生成自启命令行；minimized 为真时附带 --minimized，开机后静默到托盘。"""
     # exe
     if getattr(sys, "frozen", False):
-        return f'"{os.path.abspath(sys.executable)}"'
+        command = f'"{os.path.abspath(sys.executable)}"'
     # 源码运行
-    script = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), "main.py"))
-    return f'"{_pythonw()}" "{script}"'
+    else:
+        script = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), "main.py"))
+        command = f'"{_pythonw()}" "{script}"'
+    return f"{command} --minimized" if minimized else command
 
 
 def is_enabled() -> bool:
@@ -38,10 +40,20 @@ def is_enabled() -> bool:
     return bool(current_command())
 
 
-def enable() -> Tuple[bool, Optional[str]]:
+def is_minimized() -> bool:
+    """启动项是否带 --minimized，复选框状态以此为准。"""
+    return "--minimized" in (current_command() or "")
+
+
+def points_to_current() -> bool:
+    """启动项是否指向当前程序（对 --minimized 两种写法都算匹配）。"""
+    return current_command() in (launch_command(False), launch_command(True))
+
+
+def enable(minimized: bool = False) -> Tuple[bool, Optional[str]]:
     try:
         with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_WRITE) as key:
-            winreg.SetValueEx(key, VALUE_NAME, 0, winreg.REG_SZ, launch_command())
+            winreg.SetValueEx(key, VALUE_NAME, 0, winreg.REG_SZ, launch_command(minimized))
         return True, None
     except OSError as exc:
         msg = f"无法写入注册表: {exc}"
@@ -60,8 +72,8 @@ def disable() -> Tuple[bool, Optional[str]]:
         return False, msg
 
 
-def set_enabled(enabled: bool) -> Tuple[bool, Optional[str]]:
-    return enable() if enabled else disable()
+def set_enabled(enabled: bool, minimized: bool = False) -> Tuple[bool, Optional[str]]:
+    return enable(minimized) if enabled else disable()
 
 
 def current_command() -> Optional[str]:

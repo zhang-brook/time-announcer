@@ -60,7 +60,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
 
     "autostart": False,
-    "start_minimized": False,
     "minimize_to_tray": True,
 }
 

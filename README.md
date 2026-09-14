@@ -64,7 +64,7 @@ python main.py --minimized    # 启动后最小化到系统托盘
 | `voice` | `{name, rate, volume}`，`name` 留空自动选中文语音 |
 | `text` | 播报文案模板，`{h}` `{m}` 为中文时分，`{H}` `{M}` 为两位数数字 |
 | `audio` | `{boost_enabled, boost_volume, restore_after}` |
-| `autostart` / `start_minimized` / `minimize_to_tray` | 自启与托盘相关 |
+| `autostart` / `minimize_to_tray` | 自启与托盘相关 |
 
 ## 目录结构
 
@@ -115,4 +115,4 @@ python -m PyInstaller --noconfirm --clean TimeAnnouncer.spec
 #     --icon assets/app.ico --add-data "assets/app.ico;assets" main.py
 ```
 
-产物在 `dist\TimeAnnouncer.exe`，可自行放到固定目录并重新勾选开机自启。
+产物在 `dist\TimeAnnouncer.exe`，可自行放到固定目录；若移动后与注册表里的启动项不一致，下次启动会弹窗询问是否更新指向。

@@ -2,7 +2,7 @@
 
 用法：
     python main.py              显示主窗口
-    python main.py --minimized  启动后最小化到系统托盘
+    python main.py --minimized  开机自启方式启动（是否最小化到托盘由配置决定）
 """
 
 from __future__ import annotations
@@ -39,7 +39,8 @@ def ensure_single_instance() -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="北京时间整点播报器")
-    parser.add_argument("--minimized", action="store_true", help="启动后最小化到系统托盘")
+    parser.add_argument("--minimized", action="store_true",
+                        help="静默启动（开机自启时使用），是否最小化由配置决定")
     args = parser.parse_args()
 
     if not ensure_single_instance():
@@ -53,7 +54,9 @@ def main() -> int:
     # 后台校时，避免系统时钟不准导致报时偏差
     threading.Thread(target=timeutil.refresh_offset, name="ntp", daemon=True).start()
 
-    app = create(cfg, announcer, scheduler, start_minimized=args.minimized or cfg.get("start_minimized", False))
+    # --minimized 由启动项决定：带参数说明用户勾选了「开机后最小化到托盘」，
+    # 手动双击 exe 不带参数，始终显示主窗口
+    app = create(cfg, announcer, scheduler, start_minimized=args.minimized)
     app.mainloop()
     return 0
 

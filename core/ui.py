@@ -118,7 +118,8 @@ class App(tk.Tk):
         self.v_test_text = tk.StringVar(value="北京时间播报测试")
 
         self.v_autostart = tk.BooleanVar(value=autostart.is_enabled())
-        self.v_start_min = tk.BooleanVar(value=cfg.get("start_minimized", False))
+        # 是否最小化直接以注册表内容为准，不写入配置文件
+        self.v_start_min = tk.BooleanVar(value=autostart.is_minimized())
         self.v_tray = tk.BooleanVar(value=cfg.get("minimize_to_tray", True))
 
         for var in self._all_vars():
@@ -131,7 +132,7 @@ class App(tk.Tk):
             self.v_voice, self.v_rate, self.v_volume,
             self.v_boost, self.v_boost_volume, self.v_restore,
             self.v_on_hour, self.v_on_minute, self.v_pomo_work, self.v_pomo_break, self.v_suffix,
-            self.v_start_min, self.v_tray,
+            self.v_tray,
         ]
 
     def on_change(self, *_args) -> None:
@@ -186,7 +187,6 @@ class App(tk.Tk):
             "pomodoro_break": self.v_pomo_break.get(),
             "suffix": self.v_suffix.get(),
         }
-        cfg["start_minimized"] = bool(self.v_start_min.get())
         cfg["minimize_to_tray"] = bool(self.v_tray.get())
 
     @staticmethod
@@ -416,7 +416,10 @@ class App(tk.Tk):
         options.pack(fill="x")
         ttk.Checkbutton(options, text="开机自动启动", variable=self.v_autostart,
                         command=self.toggle_autostart).pack(side="left")
-        ttk.Checkbutton(options, text="开机后最小化到托盘", variable=self.v_start_min).pack(side="left", padx=12)
+        self.start_min_check = ttk.Checkbutton(options, text="开机后最小化到托盘",
+                                               variable=self.v_start_min,
+                                               command=self.toggle_start_minimized)
+        self.start_min_check.pack(side="left", padx=12)
         ttk.Checkbutton(options, text="关闭窗口时最小化到托盘", variable=self.v_tray).pack(side="left")
         ttk.Button(options, text="打开配置文件", command=self.open_config).pack(side="right")
 
@@ -545,40 +548,62 @@ class App(tk.Tk):
         self.log("已停止当前播报")
 
     def toggle_autostart(self) -> None:
-        enable = self.v_autostart.get()
-        ok, err = autostart.set_enabled(enable)
-        self.cfg["autostart"] = bool(autostart.is_enabled())
-        self.v_autostart.set(self.cfg["autostart"])
-        config.save(self.cfg)
-        if ok:
-            self.log(f"开机自启已{'开启' if enable else '关闭'}")
-            self.state_label.configure(text=f"开机自启：{'已开启' if enable else '已关闭'}")
+        wanted = self.v_autostart.get()
+        ok, err = autostart.set_enabled(wanted, minimized=self.v_start_min.get())
+        self._report_autostart(
+            ok, err,
+            f"开机自启已{'开启' if wanted else '关闭'}",
+            hint="写入注册表失败，请以普通用户权限重试。",
+        )
+        self._sync_autostart_widgets()
+
+    def toggle_start_minimized(self) -> None:
+        """复选框直接改写启动项内容，勾选即带 --minimized。"""
+        if not self.v_autostart.get():
+            return
+        ok, err = autostart.enable(minimized=self.v_start_min.get())
+        self._report_autostart(ok, err)
+        self._sync_autostart_widgets()
+
+    def _sync_autostart_widgets(self) -> None:
+        """界面状态始终回读注册表，保证与实际启动项一致。"""
+        enabled = autostart.is_enabled()
+        changed = self.cfg.get("autostart") != enabled
+        self.cfg["autostart"] = enabled
+        self.v_autostart.set(enabled)
+        self.v_start_min.set(autostart.is_minimized())
+        self.start_min_check.configure(state="normal" if enabled else "disabled")
+        if enabled:
+            text = "开机自启：已开启（托盘静默）" if self.v_start_min.get() else "开机自启：已开启"
         else:
-            self.log(f"开机自启设置失败：{err}")
-            messagebox.showerror(
-                "开机自启",
-                f"写入注册表失败，请以普通用户权限重试。\n\n{err}",
-            )
+            text = "开机自启：已关闭"
+        self.state_label.configure(text=text)
+        if changed:
+            config.save(self.cfg)
 
     def _check_autostart(self) -> None:
         """启动项指向的不是当前程序时（如程序被移动过），提示用户修正。"""
         current = autostart.current_command()
-        if not current or current == autostart.launch_command():
-            return
-        choice = self._ask_autostart_fix(current)
-        if choice == "ignore":
-            self.log("已忽略启动项路径变化")
-            return
-        enable = choice == "update"
-        ok, err = autostart.set_enabled(enable)
+        if current and not autostart.points_to_current():
+            choice = self._ask_autostart_fix(current)
+            if choice == "ignore":
+                self.log("已忽略启动项路径变化")
+            elif choice == "update":
+                # 保留原有的 --minimized 设置
+                ok, err = autostart.set_enabled(True, minimized=autostart.is_minimized())
+                self._report_autostart(ok, err, "开机自启已指向当前程序")
+            else:
+                ok, err = autostart.set_enabled(False)
+                self._report_autostart(ok, err, "已删除开机自启项")
+        self._sync_autostart_widgets()
+
+    def _report_autostart(self, ok: bool, err: Optional[str], done: str = "", hint: str = "") -> None:
         if ok:
-            self.log("开机自启已指向当前程序" if enable else "已删除开机自启项")
+            if done:
+                self.log(done)
         else:
             self.log(f"开机自启设置失败：{err}")
-            messagebox.showerror("开机自启", err)
-        self.v_autostart.set(autostart.is_enabled())
-        self.cfg["autostart"] = self.v_autostart.get()
-        config.save(self.cfg)
+            messagebox.showerror("开机自启", f"{hint}\n\n{err}".strip())
 
     def _ask_autostart_fix(self, current: str) -> str:
         """三选一：更新 / 删除 / 忽略，返回对应动作。"""
@@ -591,7 +616,7 @@ class App(tk.Tk):
         text = (
             "检测到开机自启项指向的程序已改变，可能是程序所在目录发生变化。\n\n"
             f"启动项：{current}\n"
-            f"当前程序：{autostart.launch_command()}\n\n"
+            f"当前程序：{autostart.launch_command(autostart.is_minimized())}\n\n"
             "是否将启动项更新为指向当前程序？"
         )
         ttk.Label(dialog, text=text, justify="left", wraplength=560).pack(padx=16, pady=(16, 12))
