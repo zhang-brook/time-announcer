@@ -110,6 +110,9 @@ python -m core.icon
 
 ```powershell
 pip install pyinstaller
+# python -m PyInstaller --version
+
+# docs: https://pyinstaller.org/en/latest/usage.html
 python -m PyInstaller --noconfirm --clean TimeAnnouncer.spec
 
 # 不使用 spec 时的等价命令
