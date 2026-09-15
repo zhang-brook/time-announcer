@@ -28,6 +28,48 @@ FONT_BOLD = ("Microsoft YaHei UI", 10, "bold")
 FONT_CLOCK = ("Microsoft YaHei UI", 26, "bold")
 
 
+class _ScrollPage(ttk.Frame):
+    """标签页容器：内容高于可视区域时才出现滚动条，窗口变矮也不会裁掉内容。"""
+
+    def __init__(self, parent) -> None:
+        super().__init__(parent)
+        background = ttk.Style(self).lookup("TFrame", "background") or "#f0f0f0"
+        self.canvas = tk.Canvas(self, highlightthickness=0, borderwidth=0, background=background)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.vbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self._sync_bar)
+
+        self.body = ttk.Frame(self.canvas)
+        self._window = self.canvas.create_window((0, 0), window=self.body, anchor="nw")
+        self.body.bind("<Configure>", self._sync_region)
+        self.canvas.bind("<Configure>", self._sync_width)
+
+    def _sync_bar(self, first: str, last: str) -> None:
+        if float(first) <= 0.0 and float(last) >= 1.0:
+            self.vbar.pack_forget()
+        elif not self.vbar.winfo_ismapped():
+            self.vbar.pack(side="right", fill="y")
+        self.vbar.set(first, last)
+
+    def _sync_region(self, _event=None) -> None:
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _sync_width(self, event) -> None:
+        # 只做纵向滚动，内容宽度始终跟随窗口
+        self.canvas.itemconfigure(self._window, width=event.width)
+
+    def owns(self, widget) -> bool:
+        """判断控件是否属于本页，用于把滚轮事件路由到正确的标签页。"""
+        while widget is not None:
+            if widget is self:
+                return True
+            widget = getattr(widget, "master", None)
+        return False
+
+    def scroll(self, delta: int) -> None:
+        self.canvas.yview_scroll(-3 if delta > 0 else 3, "units")
+
+
 class App(tk.Tk):
     def __init__(self, cfg: Dict[str, Any], announcer, scheduler, start_minimized: bool = False):
         super().__init__()
@@ -47,14 +89,17 @@ class App(tk.Tk):
         self._tray = None
 
         self.title(f"{config.APP_NAME} · 整点北京时间播报")
-        self.geometry("760x800")
-        self.minsize(680, 800)
+        self.geometry("780x700")
+        self.minsize(680, 520)
         self._apply_icon()
 
         self._init_vars()
         self._build_header()
+        # 底部条先占位：窗口再矮也始终贴在底部，不会被标签页内容挤掉
+        self._build_bottom_bar()
+        self._build_log()
         self._build_tabs()
-        self._build_footer()
+        self.bind("<MouseWheel>", self._on_wheel)
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self._loading = False
@@ -123,6 +168,8 @@ class App(tk.Tk):
         # 是否最小化直接以注册表内容为准，不写入配置文件
         self.v_start_min = tk.BooleanVar(value=autostart.is_minimized())
         self.v_tray = tk.BooleanVar(value=cfg.get("minimize_to_tray", True))
+        # 纯界面状态：日志区默认收起，不写入配置文件
+        self.v_show_log = tk.BooleanVar(value=False)
 
         for var in self._all_vars():
             var.trace_add("write", self.on_change)
@@ -238,16 +285,16 @@ class App(tk.Tk):
         self.update_idletasks()
         header.columnconfigure(2, minsize=actions.winfo_reqwidth())
 
-        # 时钟偏差单独占一行，不再挤压右上角的按钮空间
+        # 时钟偏差与总开关并排一行，省下的纵向空间留给标签页内容
         self.offset_label = ttk.Label(header, text="", font=("Microsoft YaHei UI", 8), foreground="#888")
-        self.offset_label.grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        self.offset_label.grid(row=2, column=0, sticky="w", pady=(6, 0))
 
         # 全局总开关放在标题区，任何标签页下都能随手开关
         self.master_check = ttk.Checkbutton(
             header, text=self._master_text(),
             variable=self.v_master, style="Master.TCheckbutton",
         )
-        self.master_check.grid(row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        self.master_check.grid(row=2, column=1, columnspan=2, sticky="w", padx=(16, 0), pady=(6, 0))
 
     def _master_text(self) -> str:
         """总开关文案随状态变化，关闭时说明影响范围。"""
@@ -267,9 +314,11 @@ class App(tk.Tk):
             (self._tab_text, "播报文案"),
             (self._tab_about, "关于"),
         ):
-            tab = builder(notebook)  # 页面必须是 Notebook 的子控件
-            self.tabs.append(tab)
-            notebook.add(tab, text=title)
+            # 每个页面套一层滚动容器：窗口变矮时靠滚动查看，而不是裁掉控件
+            page = _ScrollPage(notebook)
+            builder(page.body).pack(fill="both", expand=True)
+            self.tabs.append(page)
+            notebook.add(page, text=title)
 
     def _tab_time(self, notebook) -> ttk.Frame:
         frame = ttk.Frame(notebook, padding=12)
@@ -425,11 +474,13 @@ class App(tk.Tk):
             self.log(f"打开项目主页失败：{exc}")
             messagebox.showerror("关于", f"无法打开浏览器。\n\n{APP_REPO_URL}")
 
-    def _build_footer(self) -> None:
-        footer = ttk.Frame(self, padding=(16, 8))
-        footer.pack(fill="x")
+    def _build_bottom_bar(self) -> None:
+        """底部固定条：自启选项、日志开关与配置文件路径始终可见。"""
+        bar = ttk.Frame(self, padding=(16, 6))
+        bar.pack(side="bottom", fill="x")
+        self.bottom_bar = bar
 
-        options = ttk.Frame(footer)
+        options = ttk.Frame(bar)
         options.pack(fill="x")
         ttk.Checkbutton(options, text="开机自动启动", variable=self.v_autostart,
                         command=self.toggle_autostart).pack(side="left")
@@ -440,14 +491,39 @@ class App(tk.Tk):
         ttk.Checkbutton(options, text="关闭窗口时最小化到托盘", variable=self.v_tray).pack(side="left")
         ttk.Button(options, text="打开配置文件", command=self.open_config).pack(side="right")
 
-        log_frame = ttk.LabelFrame(footer, text="运行日志", padding=6)
-        log_frame.pack(fill="both", expand=True, pady=(8, 0))
-        self.log_box = tk.Text(log_frame, height=6, font=("Consolas", 9), state="disabled")
-        self.log_box.pack(fill="both", expand=True)
-
-        self.status_label = ttk.Label(footer, text=f"配置文件：{config.config_path()}",
+        info = ttk.Frame(bar)
+        info.pack(fill="x", pady=(4, 0))
+        ttk.Checkbutton(info, text="显示运行日志", variable=self.v_show_log,
+                        command=self.toggle_log).pack(side="right")
+        self.status_label = ttk.Label(info, text=f"配置文件：{config.config_path()}",
                                       foreground="#888", font=("Microsoft YaHei UI", 8))
-        self.status_label.pack(anchor="w", pady=(6, 0))
+        self.status_label.pack(side="left")
+
+    def _build_log(self) -> None:
+        self.log_frame = ttk.LabelFrame(self, text="运行日志", padding=6)
+        self.log_box = tk.Text(self.log_frame, height=6, font=("Consolas", 9), state="disabled")
+        self.log_box.pack(fill="both", expand=True)
+        if self.v_show_log.get():
+            self._layout_log()
+
+    def _layout_log(self) -> None:
+        # 排在底部条之后打包，日志区正好落在底部条上方，不参与标签页的伸缩
+        self.log_frame.pack(side="bottom", fill="x", after=self.bottom_bar, padx=16, pady=(0, 6))
+
+    def toggle_log(self) -> None:
+        if self.v_show_log.get():
+            self._layout_log()
+        else:
+            self.log_frame.pack_forget()
+
+    def _on_wheel(self, event) -> None:
+        """滚轮交给鼠标所在的标签页；文本框自身可滚动时不做拦截。"""
+        if isinstance(event.widget, (tk.Text, tk.Listbox)):
+            return
+        for page in self.tabs:
+            if page.owns(event.widget):
+                page.scroll(event.delta)
+                return
 
     @staticmethod
     def _scale_row(parent, label: str, var: tk.IntVar, low: int, high: int, row: int) -> None:
