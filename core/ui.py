@@ -489,15 +489,15 @@ class App(tk.Tk):
                                                command=self.toggle_start_minimized)
         self.start_min_check.pack(side="left", padx=12)
         ttk.Checkbutton(options, text="关闭窗口时最小化到托盘", variable=self.v_tray).pack(side="left")
-        ttk.Button(options, text="打开配置文件", command=self.open_config).pack(side="right")
+        ttk.Checkbutton(options, text="显示运行日志", variable=self.v_show_log,
+                        command=self.toggle_log).pack(side="right")
 
         info = ttk.Frame(bar)
         info.pack(fill="x", pady=(4, 0))
-        ttk.Checkbutton(info, text="显示运行日志", variable=self.v_show_log,
-                        command=self.toggle_log).pack(side="right")
         self.status_label = ttk.Label(info, text=f"配置文件：{config.config_path()}",
                                       foreground="#888", font=("Microsoft YaHei UI", 8))
         self.status_label.pack(side="left")
+        ttk.Button(info, text="打开配置文件", command=self.open_config).pack(side="right")
 
     def _build_log(self) -> None:
         self.log_frame = ttk.LabelFrame(self, text="运行日志", padding=6)
