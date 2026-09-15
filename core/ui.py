@@ -53,10 +53,12 @@ class _ScrollPage(ttk.Frame):
 
     def _sync_region(self, _event=None) -> None:
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self._clamp_view()
 
     def _sync_width(self, event) -> None:
         # 只做纵向滚动，内容宽度始终跟随窗口
         self.canvas.itemconfigure(self._window, width=event.width)
+        self._sync_region()
 
     def owns(self, widget) -> bool:
         """判断控件是否属于本页，用于把滚轮事件路由到正确的标签页。"""
@@ -68,6 +70,19 @@ class _ScrollPage(ttk.Frame):
 
     def scroll(self, delta: int) -> None:
         self.canvas.yview_scroll(-3 if delta > 0 else 3, "units")
+        self._clamp_view()
+
+    def _clamp_view(self) -> None:
+        """把视图夹在内容范围内，滚动到两端时不会露出多余空白。"""
+        content = self.body.winfo_reqheight()
+        limit = max(0, content - self.canvas.winfo_height())
+        offset = self.canvas.canvasy(0)
+        if content <= 0:
+            return
+        if offset < 0:
+            self.canvas.yview_moveto(0.0)
+        elif offset > limit:
+            self.canvas.yview_moveto(limit / content)
 
 
 class App(tk.Tk):
