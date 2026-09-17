@@ -58,6 +58,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "boost_enabled": True,      # 静音 / 音量过低时临时调高
         "boost_volume": 60,         # 调高到的系统主音量 0 ~ 100
         "restore_after": True,      # 播报结束后还原原音量与静音状态
+        "chime_enabled": True,      # 播报前先播放提示音，避免突然出声
     },
 
     "autostart": False,

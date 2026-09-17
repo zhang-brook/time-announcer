@@ -170,6 +170,7 @@ class App(tk.Tk):
         self.v_boost = tk.BooleanVar(value=audio.get("boost_enabled", True))
         self.v_boost_volume = tk.IntVar(value=audio.get("boost_volume", 60))
         self.v_restore = tk.BooleanVar(value=audio.get("restore_after", True))
+        self.v_chime = tk.BooleanVar(value=audio.get("chime_enabled", True))
 
         text = cfg.get("text", {})
         self.v_on_hour = tk.StringVar(value=text.get("on_hour", ""))
@@ -195,7 +196,7 @@ class App(tk.Tk):
             self.v_enabled, self.v_mode, self.v_hour_start, self.v_hour_end, self.v_hour_all_day,
             self.v_pomo_enabled, self.v_work, self.v_break, self.v_rounds,
             self.v_voice, self.v_rate, self.v_volume,
-            self.v_boost, self.v_boost_volume, self.v_restore,
+            self.v_boost, self.v_boost_volume, self.v_restore, self.v_chime,
             self.v_on_hour, self.v_on_minute, self.v_pomo_work, self.v_pomo_break, self.v_suffix,
             self.v_tray,
         ]
@@ -245,6 +246,7 @@ class App(tk.Tk):
             "boost_enabled": bool(self.v_boost.get()),
             "boost_volume": self._clamp(self.v_boost_volume, 1, 100),
             "restore_after": bool(self.v_restore.get()),
+            "chime_enabled": bool(self.v_chime.get()),
         }
         cfg["text"] = {
             "on_hour": self.v_on_hour.get(),
@@ -434,6 +436,8 @@ class App(tk.Tk):
         self._scale_row(audio_box, "播报时音量", self.v_boost_volume, 1, 100, 1)
         ttk.Checkbutton(audio_box, text="播报结束后还原原音量与静音状态",
                         variable=self.v_restore).grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        ttk.Checkbutton(audio_box, text="播报前先滴一声提示音（避免突然出声）",
+                        variable=self.v_chime).grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         self.volume_label = ttk.Label(frame, text="", foreground="#666")
         self.volume_label.pack(anchor="w", pady=(10, 0))

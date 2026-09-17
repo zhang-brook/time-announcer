@@ -43,6 +43,7 @@ python main.py --minimized    # 启动后最小化到系统托盘
   - 自定义时刻：每天固定若干时间点，如 `09:00 / 12:30 / 18:45`
 - **番茄钟**：专注 / 休息交替播报，可设时长与轮数（0 为无限循环），与整点报时互不冲突
 - **音量处理**：静音或音量过低时自动取消静音并调高到目标音量，播报结束后自动还原
+- **提示音**：可选播报前先滴一声再说话，避免安静环境下突然出声吓人
 - **语音设置**：发音人、语速、音量、播报文案均可自定义
 - **开机自启**：写入 `HKCU\...\Run` 注册表项，无需管理员权限
 - **系统托盘**：关闭窗口或后台启动时驻留托盘，双击图标恢复窗口
@@ -65,7 +66,7 @@ python main.py --minimized    # 启动后最小化到系统托盘
 | `pomodoro` | `{enabled, work_minutes, break_minutes, rounds}` |
 | `voice` | `{name, rate, volume}`，`name` 留空自动选中文语音 |
 | `text` | 播报文案模板，`{h}` `{m}` 为中文时分，`{H}` `{M}` 为两位数数字 |
-| `audio` | `{boost_enabled, boost_volume, restore_after}` |
+| `audio` | `{boost_enabled, boost_volume, restore_after, chime_enabled}`，`chime_enabled` 为播报前是否先播放提示音 |
 | `autostart` / `minimize_to_tray` | 自启与托盘相关 |
 
 ## 目录结构
@@ -80,7 +81,8 @@ time-announcer/
 │   ├── timeutil.py         北京时间与中文数字、NTP 校时
 │   ├── speaker.py          SAPI 语音合成（枚举语音、播报、停止）
 │   ├── volume.py           系统主音量 / 静音读写
-│   ├── announcer.py        播报流程（临时调高音量 → 播报 → 还原）
+│   ├── chime.py            播报前提示音（系统提示音 / 蜂鸣兜底）
+│   ├── announcer.py        播报流程（临时调高音量 → 提示音 → 播报 → 还原）
 │   ├── scheduler.py        定时调度（四种计划）
 │   ├── autostart.py        开机自启（注册表）
 │   ├── icon.py             图标绘制与 assets/app.ico 生成
