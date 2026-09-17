@@ -128,8 +128,8 @@ pip install pyinstaller
 python -m PyInstaller --noconfirm --clean TimeAnnouncer.spec
 
 # 不使用 spec 时的等价命令
-# python -m PyInstaller --noconfirm --onefile --windowed --name TimeAnnouncer `
-#     --icon assets/app.ico --add-data "assets/app.ico;assets" `
+# python -m PyInstaller --noconfirm --onefile --windowed --name TimeAnnouncer ^
+#     --icon assets/app.ico --add-data "assets/app.ico;assets" ^
 #     --add-data "assets/chime.wav;assets" main.py
 ```
 
