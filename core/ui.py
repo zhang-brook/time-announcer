@@ -124,9 +124,11 @@ class App(tk.Tk):
 
         self._tick_clock()
         self._drain_log()
+        # 托盘图标随程序启动即可用，不必等窗口被关闭过一次
+        self._ensure_tray()
         if start_minimized:
             # 托盘不可用时降级为正常显示，避免程序隐藏后无法找回
-            if self._ensure_tray():
+            if self._tray is not None:
                 self.withdraw()
             else:
                 self.deiconify()
