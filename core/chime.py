@@ -14,10 +14,11 @@ import winsound
 from .icon import resource_root
 
 WAV_FILE = "chime.wav"
-LEAD_SECONDS = 0.8      # 提示音与语音的间隔：提示音将尽时开口，衔接自然
 
 _RATE = 44100
 _DURATION = 0.72
+_SILENCE = 0.8          # 提示音结束后的停顿，留出「反应一下」的余量
+LEAD_SECONDS = _DURATION + _SILENCE
 _ATTACK = 0.006         # 起音淡入，避免爆音
 _FADE_OUT = 0.05        # 收尾淡出，避免截断的咔哒声
 _PEAK = 0.6             # 归一化峰值，留足余量
