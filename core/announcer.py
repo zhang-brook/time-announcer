@@ -54,7 +54,7 @@ class Announcer:
         try:
             self.on_state(f"播报中：{text}")
             if audio_cfg.get("chime_enabled", True):
-                # 先滴一声再说话：音量已经调高，提示音才能被听到
+                # 先响提示音再说话：音量已经调高，提示音才能被听到
                 chime.play()
                 if not self._wait(chime.LEAD_SECONDS):
                     return False

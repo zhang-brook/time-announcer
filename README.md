@@ -43,7 +43,7 @@ python main.py --minimized    # 启动后最小化到系统托盘
   - 自定义时刻：每天固定若干时间点，如 `09:00 / 12:30 / 18:45`
 - **番茄钟**：专注 / 休息交替播报，可设时长与轮数（0 为无限循环），与整点报时互不冲突
 - **音量处理**：静音或音量过低时自动取消静音并调高到目标音量，播报结束后自动还原
-- **提示音**：可选播报前先滴一声再说话，避免安静环境下突然出声吓人
+- **提示音**：可选播报前先「叮-咚」两声再说话，避免安静环境下突然出声吓人
 - **语音设置**：发音人、语速、音量、播报文案均可自定义
 - **开机自启**：写入 `HKCU\...\Run` 注册表项，无需管理员权限
 - **系统托盘**：关闭窗口或后台启动时驻留托盘，双击图标恢复窗口
@@ -75,13 +75,14 @@ python main.py --minimized    # 启动后最小化到系统托盘
 time-announcer/
 ├── main.py                 程序入口（单实例保护、参数解析）
 ├── assets/
-│   └── app.ico             应用图标（托盘 / 窗口 / exe 共用）
+│   ├── app.ico             应用图标（托盘 / 窗口 / exe 共用）
+│   └── chime.wav           播报前提示音（由 core/chime.py 合成）
 ├── core/
 │   ├── config.py           配置读写（JSON，默认值补全）
 │   ├── timeutil.py         北京时间与中文数字、NTP 校时
 │   ├── speaker.py          SAPI 语音合成（枚举语音、播报、停止）
 │   ├── volume.py           系统主音量 / 静音读写
-│   ├── chime.py            播报前提示音（系统提示音 / 蜂鸣兜底）
+│   ├── chime.py            播报前提示音（合成 assets/chime.wav）
 │   ├── announcer.py        播报流程（临时调高音量 → 提示音 → 播报 → 还原）
 │   ├── scheduler.py        定时调度（四种计划）
 │   ├── autostart.py        开机自启（注册表）
@@ -99,6 +100,15 @@ time-announcer/
 
 ```powershell
 python -m core.icon
+```
+
+## 提示音
+
+播报前的提示音由 [core/chime.py](core/chime.py) 现场合成（G5 → C6 两声「叮-咚」，带淡入淡出包络），
+不依赖 Windows 声音方案，避免和系统提示音混淆。改完合成参数后重新生成即可：
+
+```powershell
+python -m core.chime
 ```
 
 ## 常见问题
@@ -119,7 +129,8 @@ python -m PyInstaller --noconfirm --clean TimeAnnouncer.spec
 
 # 不使用 spec 时的等价命令
 # python -m PyInstaller --noconfirm --onefile --windowed --name TimeAnnouncer `
-#     --icon assets/app.ico --add-data "assets/app.ico;assets" main.py
+#     --icon assets/app.ico --add-data "assets/app.ico;assets" `
+#     --add-data "assets/chime.wav;assets" main.py
 ```
 
 产物在 `dist\TimeAnnouncer.exe`，可自行放到固定目录；若移动后与注册表里的启动项不一致，下次启动会弹窗询问是否更新指向。

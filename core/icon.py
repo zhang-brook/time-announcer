@@ -36,7 +36,7 @@ def draw(size: int = 256) -> "Image.Image":
     return image
 
 
-def _resource_root() -> str:
+def resource_root() -> str:
     """打包后为 _MEIPASS 解包目录，源码运行时为项目根目录。"""
     bundled = getattr(sys, "_MEIPASS", None)
     if bundled:
@@ -46,7 +46,7 @@ def _resource_root() -> str:
 
 def icon_path() -> Optional[str]:
     """返回 assets/app.ico 的绝对路径，文件缺失时返回 None。"""
-    path = os.path.join(_resource_root(), "assets", ICON_FILE)
+    path = os.path.join(resource_root(), "assets", ICON_FILE)
     return path if os.path.exists(path) else None
 
 

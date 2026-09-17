@@ -436,7 +436,7 @@ class App(tk.Tk):
         self._scale_row(audio_box, "播报时音量", self.v_boost_volume, 1, 100, 1)
         ttk.Checkbutton(audio_box, text="播报结束后还原原音量与静音状态",
                         variable=self.v_restore).grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
-        ttk.Checkbutton(audio_box, text="播报前先滴一声提示音（避免突然出声）",
+        ttk.Checkbutton(audio_box, text="播报前先播放提示音「叮-咚」（避免突然出声）",
                         variable=self.v_chime).grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         self.volume_label = ttk.Label(frame, text="", foreground="#666")
