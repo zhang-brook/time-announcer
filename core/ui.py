@@ -104,7 +104,8 @@ class App(tk.Tk):
         self._tray = None
 
         self.title(f"{config.APP_NAME} · 整点北京时间播报")
-        self.geometry("780x700")
+        # self.geometry("780x700")
+        self._center_window(780, 700)
         self.minsize(680, 520)
         self._apply_icon()
 
@@ -145,6 +146,13 @@ class App(tk.Tk):
             self.iconbitmap(path)
         except tk.TclError:
             pass
+
+    def _center_window(self, width: int, height: int) -> None:
+        """按主显示器工作区把窗口摆到屏幕正中，而不是默认的左上角。"""
+        work_h = self.winfo_screenheight() - 80  # 粗略扣除任务栏
+        x = max((self.winfo_screenwidth() - width) // 2, 0)
+        y = max((work_h - height) // 2, 0)
+        self.geometry(f"{width}x{height}+{x}+{y}")
 
     # ---------------- 变量与配置同步 ----------------
 
